@@ -41,9 +41,17 @@ object StreamerHolder {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
+    /** Live camera orientation tuning (spec README "Bring-up order"). */
+    data class Flip(val horizontal: Boolean, val vertical: Boolean)
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var streamer: SingleStreamer? = null
     private var previewSurface: Surface? = null
+
+    private val _flip = MutableStateFlow(
+        Flip(StreamConfig.CAMERA_FLIP_HORIZONTAL, StreamConfig.CAMERA_FLIP_VERTICAL)
+    )
+    val flip: StateFlow<Flip> = _flip.asStateFlow()
 
     val isStreaming: Boolean get() = _state.value is State.Live || _state.value is State.Starting
 
@@ -78,8 +86,9 @@ object StreamerHolder {
             )
             streamer = s
 
-            // Wire the operator preview into our custom source (no-op if none set yet).
+            // Wire operator preview + current flip state into our custom source.
             applyPreview()
+            applyFlip()
 
             // Surface error propagation from the pipeline.
             scope.launch {
@@ -89,6 +98,10 @@ object StreamerHolder {
             val url = buildRtmpUrl(ingestUrl, streamKey)
             s.open(UriMediaDescriptor(url))
             s.startStream()
+            // Re-apply in case StreamPack created the video source lazily during startStream();
+            // by now the source (and its compositor) certainly exist.
+            applyFlip()
+            applyPreview()
             _state.value = State.Live
             Log.i(TAG, "Streaming to $url")
         } catch (t: Throwable) {
@@ -115,9 +128,21 @@ object StreamerHolder {
         applyPreview()
     }
 
+    /** Toggle camera mirroring/rotation live; persists across (re)starts within this process. */
+    fun setFlip(horizontal: Boolean, vertical: Boolean) {
+        _flip.value = Flip(horizontal, vertical)
+        applyFlip()
+    }
+
+    private fun source(): com.scorecast.app.overlay.CameraOverlayVideoSource? =
+        streamer?.videoInput?.sourceFlow?.value as? com.scorecast.app.overlay.CameraOverlayVideoSource
+
     private fun applyPreview() {
-        val source = streamer?.videoInput?.sourceFlow?.value
-        (source as? com.scorecast.app.overlay.CameraOverlayVideoSource)?.setPreviewSurface(previewSurface)
+        source()?.setPreviewSurface(previewSurface)
+    }
+
+    private fun applyFlip() {
+        _flip.value.let { source()?.setFlip(it.horizontal, it.vertical) }
     }
 
     private fun fail(t: Throwable) {

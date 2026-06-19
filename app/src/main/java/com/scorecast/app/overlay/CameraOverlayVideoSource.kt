@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Size
 import android.view.Surface
+import com.scorecast.app.StreamConfig
 import io.github.thibaultbee.streampack.core.elements.processing.video.source.DefaultSourceInfoProvider
 import io.github.thibaultbee.streampack.core.elements.processing.video.source.ISourceInfoProvider
 import io.github.thibaultbee.streampack.core.elements.sources.video.ISurfaceSourceInternal
@@ -46,11 +47,20 @@ class CameraOverlayVideoSource internal constructor(
     private var outputSurface: Surface? = null
     private var compositor: OverlayCompositor? = null
     private var previewSurface: Surface? = null
+    private var flipHorizontal = StreamConfig.CAMERA_FLIP_HORIZONTAL
+    private var flipVertical = StreamConfig.CAMERA_FLIP_VERTICAL
 
     /** Operator preview SurfaceView; applied immediately if streaming, else when the stream starts. */
     fun setPreviewSurface(surface: Surface?) {
         previewSurface = surface
         compositor?.setPreviewSurface(surface)
+    }
+
+    /** Live camera orientation tuning; applied immediately if streaming, else when the stream starts. */
+    fun setFlip(horizontal: Boolean, vertical: Boolean) {
+        flipHorizontal = horizontal
+        flipVertical = vertical
+        compositor?.setFlip(horizontal, vertical)
     }
 
     // --- ISurfaceSourceInternal ---
@@ -85,6 +95,8 @@ class CameraOverlayVideoSource internal constructor(
             size = cfg.resolution,
             overlayBitmap = overlayProvider(cfg.resolution),
             overlayPosition = OverlayPosition.BOTTOM_CENTER,
+            flipHorizontal = flipHorizontal,
+            flipVertical = flipVertical,
         )
         comp.start()
         previewSurface?.let { comp.setPreviewSurface(it) }

@@ -56,8 +56,10 @@ compile-time toggle in [`StreamConfig.kt`](app/src/main/java/com/scorecast/app/S
    isolates camera → encode → RTMP from the overlay.
 2. **Prove the burn-in.** Set `USE_OVERLAY = true`. The scoreboard should appear composited in.
 
-If the live image is rotated or mirrored, flip `CAMERA_FLIP_VERTICAL` / `CAMERA_FLIP_HORIZONTAL`
-in `StreamConfig.kt` — this is the documented Phase 1 tuning knob.
+If the live image is rotated or mirrored, use the **Mirror horizontally** / **Flip vertically**
+toggles in the app — they take effect on the next frame, even mid-stream, so you can tune
+orientation on-device without recompiling. `CAMERA_FLIP_VERTICAL` / `CAMERA_FLIP_HORIZONTAL` in
+`StreamConfig.kt` just set the boot defaults for those toggles.
 
 ## Android 14 foreground service / permissions
 

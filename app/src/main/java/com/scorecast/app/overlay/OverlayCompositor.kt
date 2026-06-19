@@ -45,6 +45,8 @@ class OverlayCompositor(
     private val size: Size,
     private val overlayBitmap: Bitmap?,
     private val overlayPosition: OverlayPosition = OverlayPosition.BOTTOM_CENTER,
+    flipHorizontal: Boolean = StreamConfig.CAMERA_FLIP_HORIZONTAL,
+    flipVertical: Boolean = StreamConfig.CAMERA_FLIP_VERTICAL,
 ) {
     private val thread = HandlerThread("scorecast-gl").apply { start() }
     private val handler = Handler(thread.looper)
@@ -79,10 +81,11 @@ class OverlayCompositor(
 
     private val texMatrix = FloatArray(16)
 
+    // Camera texture coords; rebuilt on the GL thread by [setFlip] for live orientation tuning.
     private val fullQuadPos = floatBuffer(
         floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)
     )
-    private val cameraTexCoords = floatBuffer(cameraTexArray())
+    private var cameraTexCoords = floatBuffer(cameraTexArray(flipHorizontal, flipVertical))
     private var overlayPosBuf: FloatBuffer = floatBuffer(FloatArray(8))
     private val overlayTexCoords = floatBuffer(
         // V flipped: bitmaps are top-left origin, GL is bottom-left.
@@ -125,6 +128,18 @@ class OverlayCompositor(
                 previewWidth = 0
                 previewHeight = 0
             }
+        }
+    }
+
+    /**
+     * Live orientation tuning (see README "Bring-up order"). Rebuilds the camera texture
+     * coordinates on the GL thread so the operator can correct rotation/mirroring on-device
+     * without recompiling. Takes effect on the next frame.
+     */
+    fun setFlip(horizontal: Boolean, vertical: Boolean) {
+        handler.post {
+            if (released) return@post
+            cameraTexCoords = floatBuffer(cameraTexArray(horizontal, vertical))
         }
     }
 
@@ -308,10 +323,10 @@ class OverlayCompositor(
         return floatArrayOf(left, bottom, right, bottom, left, top, right, top)
     }
 
-    private fun cameraTexArray(): FloatArray {
+    private fun cameraTexArray(flipHorizontal: Boolean, flipVertical: Boolean): FloatArray {
         var u0 = 0f; var u1 = 1f; var v0 = 0f; var v1 = 1f
-        if (StreamConfig.CAMERA_FLIP_HORIZONTAL) { val t = u0; u0 = u1; u1 = t }
-        if (StreamConfig.CAMERA_FLIP_VERTICAL) { val t = v0; v0 = v1; v1 = t }
+        if (flipHorizontal) { val t = u0; u0 = u1; u1 = t }
+        if (flipVertical) { val t = v0; v0 = v1; v1 = t }
         // Matches fullQuadPos order BL, BR, TL, TR
         return floatArrayOf(u0, v0, u1, v0, u0, v1, u1, v1)
     }

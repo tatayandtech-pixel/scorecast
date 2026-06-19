@@ -147,6 +147,26 @@ private fun StreamScreen() {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            Spacer(Modifier.height(8.dp))
+
+            // Live orientation tuning — adjust on-device (even mid-stream) if the image is
+            // rotated/mirrored, instead of editing StreamConfig and recompiling.
+            val flip by StreamerHolder.flip.collectAsState()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = flip.horizontal,
+                    onCheckedChange = { StreamerHolder.setFlip(it, flip.vertical) },
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Mirror horizontally", style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.width(20.dp))
+                Switch(
+                    checked = flip.vertical,
+                    onCheckedChange = { StreamerHolder.setFlip(flip.horizontal, it) },
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Flip vertically", style = MaterialTheme.typography.bodySmall)
+            }
             Spacer(Modifier.height(16.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

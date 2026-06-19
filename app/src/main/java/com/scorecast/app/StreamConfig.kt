@@ -29,10 +29,10 @@ object StreamConfig {
     const val USE_OVERLAY = true
 
     /**
-     * On-device GL tuning knobs for the camera texture (see CameraOverlayVideoSource).
+     * Boot defaults for the on-device GL camera-orientation toggles (see CameraOverlayVideoSource).
      * The camera SurfaceTexture transform handles most of it, but sensor orientation vs.
-     * locked-landscape can still need a nudge. If the live image is rotated/mirrored,
-     * adjust these and re-run — this is the documented Phase 1 tuning point.
+     * locked-landscape can still need a nudge. These set the initial state; the operator can flip
+     * mirroring/rotation live from the UI (next frame, even mid-stream) — no recompile needed.
      */
     const val CAMERA_FLIP_VERTICAL = false
     const val CAMERA_FLIP_HORIZONTAL = false
