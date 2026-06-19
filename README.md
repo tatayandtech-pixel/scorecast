@@ -37,8 +37,9 @@ Key files:
 
 ## Build & run
 
-1. Open the project in **Android Studio** (it generates the Gradle wrapper jar and `local.properties`).
-   From CLI you'd need a local Gradle ≥ 8.9 and `gradle wrapper` first.
+1. Open the project in **Android Studio** (it writes `local.properties` pointing at your SDK), or
+   build from the CLI with the committed Gradle wrapper: `./gradlew assembleDebug` (set `ANDROID_HOME`
+   or add `sdk.dir=` to `local.properties` first). Gradle 8.11.1 is pinned in `gradle/wrapper`.
 2. Plug in a **real device** (the GL/camera/encoder path does not work on the emulator). Build & run.
 3. In **YouTube Studio → Go live → Stream**, copy the **Stream URL**
    (`rtmp://a.rtmp.youtube.com/live2`, pre-filled) and the **Stream key**.

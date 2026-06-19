@@ -1,0 +1,11 @@
+# Normalize line endings across platforms (https://git-scm.com/docs/gitattributes).
+* text=auto
+
+# The Gradle launcher is a POSIX shell script — it must stay LF or it breaks on Unix/CI.
+/gradlew text eol=lf
+
+# Windows scripts need CRLF.
+*.bat text eol=crlf
+
+# The wrapper jar is binary; never apply EOL conversion.
+*.jar binary

@@ -55,6 +55,8 @@ class OverlayCompositor(
     private var eglConfig: EGLConfig? = null
     private var outputEglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
     private var previewEglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
+    private var previewWidth = 0
+    private var previewHeight = 0
 
     // Camera input
     private var cameraTexId = 0
@@ -112,6 +114,16 @@ class OverlayCompositor(
                 previewEglSurface = EGL14.eglCreateWindowSurface(
                     eglDisplay, eglConfig, surface, intArrayOf(EGL14.EGL_NONE), 0
                 )
+                // Cache the preview window's actual pixel size so we render into all of it,
+                // not the stream resolution (which would clip the composite to a corner).
+                val dims = IntArray(1)
+                EGL14.eglQuerySurface(eglDisplay, previewEglSurface, EGL14.EGL_WIDTH, dims, 0)
+                previewWidth = dims[0]
+                EGL14.eglQuerySurface(eglDisplay, previewEglSurface, EGL14.EGL_HEIGHT, dims, 0)
+                previewHeight = dims[0]
+            } else {
+                previewWidth = 0
+                previewHeight = 0
             }
         }
     }
@@ -155,16 +167,16 @@ class OverlayCompositor(
             makeCurrent(outputEglSurface)
             cameraSurfaceTexture.updateTexImage()
             cameraSurfaceTexture.getTransformMatrix(texMatrix)
-            renderComposite()
+            renderComposite(size.width, size.height)
             EGLExt.eglPresentationTimeANDROID(
                 eglDisplay, outputEglSurface, cameraSurfaceTexture.timestamp
             )
             EGL14.eglSwapBuffers(eglDisplay, outputEglSurface)
 
-            // 2) Operator preview (best-effort, not encoded).
-            if (previewEglSurface != EGL14.EGL_NO_SURFACE) {
+            // 2) Operator preview (best-effort, not encoded) — fill the preview window.
+            if (previewEglSurface != EGL14.EGL_NO_SURFACE && previewWidth > 0 && previewHeight > 0) {
                 makeCurrent(previewEglSurface)
-                renderComposite()
+                renderComposite(previewWidth, previewHeight)
                 EGL14.eglSwapBuffers(eglDisplay, previewEglSurface)
             }
         } catch (t: Throwable) {
@@ -172,8 +184,8 @@ class OverlayCompositor(
         }
     }
 
-    private fun renderComposite() {
-        GLES20.glViewport(0, 0, size.width, size.height)
+    private fun renderComposite(viewportWidth: Int, viewportHeight: Int) {
+        GLES20.glViewport(0, 0, viewportWidth, viewportHeight)
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
