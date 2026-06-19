@@ -86,10 +86,13 @@ private fun StreamScreen() {
         }
     }
 
-    Row(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    val live = state is StreamerHolder.State.Live || state is StreamerHolder.State.Starting
+    val flip by StreamerHolder.flip.collectAsState()
+
+    Row(modifier = Modifier.fillMaxSize().padding(12.dp)) {
         // Preview pane (operator view; same composited frame that is encoded).
         AndroidView(
-            modifier = Modifier.fillMaxHeight().width(420.dp),
+            modifier = Modifier.weight(1f).fillMaxHeight(),
             factory = { ctx ->
                 SurfaceView(ctx).apply {
                     holder.addCallback(object : SurfaceHolder.Callback {
@@ -109,75 +112,78 @@ private fun StreamScreen() {
             },
         )
 
-        Spacer(Modifier.width(20.dp))
+        Spacer(Modifier.width(16.dp))
 
-        Column(
-            modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
-        ) {
-            Text("ScoreCast — Phase 1", style = MaterialTheme.typography.titleLarge)
-            Text(
-                "Static burned-in scoreboard → RTMP",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Spacer(Modifier.height(16.dp))
+        // Controls: scrollable settings on top, a fixed action bar (Status + buttons) pinned
+        // at the bottom so Go live / Stop are always reachable on short landscape screens.
+        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text("ScoreCast — Phase 1", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
 
-            val live = state is StreamerHolder.State.Live || state is StreamerHolder.State.Starting
-
-            OutlinedTextField(
-                value = ingestUrl,
-                onValueChange = { ingestUrl = it },
-                label = { Text("RTMP(S) ingest URL") },
-                singleLine = true,
-                enabled = !live,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = streamKey,
-                onValueChange = { streamKey = it },
-                label = { Text("Stream key") },
-                singleLine = true,
-                enabled = !live,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(12.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(checked = StreamConfig.USE_OVERLAY, enabled = false, onCheckedChange = {})
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (StreamConfig.USE_OVERLAY) "Overlay burn-in ON (compile-time)"
-                    else "Overlay burn-in OFF (compile-time)",
-                    style = MaterialTheme.typography.bodySmall,
+                OutlinedTextField(
+                    value = ingestUrl,
+                    onValueChange = { ingestUrl = it },
+                    label = { Text("RTMP(S) ingest URL") },
+                    singleLine = true,
+                    enabled = !live,
+                    modifier = Modifier.fillMaxWidth(),
                 )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = streamKey,
+                    onValueChange = { streamKey = it },
+                    label = { Text("Stream key") },
+                    singleLine = true,
+                    enabled = !live,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = StreamConfig.USE_OVERLAY, enabled = false, onCheckedChange = {})
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (StreamConfig.USE_OVERLAY) "Overlay burn-in ON (compile-time)"
+                        else "Overlay burn-in OFF (compile-time)",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+
+                // Live orientation tuning — adjust on-device (even mid-stream) if the image is
+                // rotated/mirrored, instead of editing StreamConfig and recompiling.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = flip.horizontal,
+                        onCheckedChange = { StreamerHolder.setFlip(it, flip.vertical) },
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Mirror", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.width(16.dp))
+                    Switch(
+                        checked = flip.vertical,
+                        onCheckedChange = { StreamerHolder.setFlip(flip.horizontal, it) },
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Flip", style = MaterialTheme.typography.bodySmall)
+                }
             }
+
+            // Fixed action bar (never scrolls off-screen).
             Spacer(Modifier.height(8.dp))
-
-            // Live orientation tuning — adjust on-device (even mid-stream) if the image is
-            // rotated/mirrored, instead of editing StreamConfig and recompiling.
-            val flip by StreamerHolder.flip.collectAsState()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(
-                    checked = flip.horizontal,
-                    onCheckedChange = { StreamerHolder.setFlip(it, flip.vertical) },
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("Mirror horizontally", style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.width(20.dp))
-                Switch(
-                    checked = flip.vertical,
-                    onCheckedChange = { StreamerHolder.setFlip(flip.horizontal, it) },
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("Flip vertically", style = MaterialTheme.typography.bodySmall)
-            }
-            Spacer(Modifier.height(16.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Status: ${statusText(state)}", style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Button(
+                    modifier = Modifier.weight(1f),
                     enabled = !live,
                     onClick = {
                         if (hasPermission(context, Manifest.permission.CAMERA) &&
@@ -192,13 +198,11 @@ private fun StreamScreen() {
                 ) { Text("Go live") }
 
                 Button(
+                    modifier = Modifier.weight(1f),
                     enabled = live,
                     onClick = { StreamingService.stop(context) },
                 ) { Text("Stop") }
             }
-
-            Spacer(Modifier.height(20.dp))
-            Text("Status: ${statusText(state)}", style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
