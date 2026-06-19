@@ -10,7 +10,7 @@ auto-update, or platform picker.
 
 ## Stack
 
-- Kotlin, Jetpack Compose, `minSdk 26`, `targetSdk 34`, `compileSdk 35`
+- Kotlin, Jetpack Compose, `minSdk 26`, `targetSdk 34`, `compileSdk 36`
 - **StreamPack 3.1.2** (`io.github.thibaultbee.streampack:streampack-core` + `:streampack-rtmp`)
   for capture → composite → H.264 → RTMP. The RTMP endpoint is discovered reflectively by
   StreamPack's `DynamicEndpoint`, so `:streampack-rtmp` must stay on the classpath.

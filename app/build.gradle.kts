@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.scorecast.app"
-    compileSdk = 35
+    compileSdk = 36            // AndroidX core 1.17.0 (via StreamPack) requires API 36 to compile against.
 
     defaultConfig {
         applicationId = "com.scorecast.app"

@@ -33,7 +33,7 @@ object StreamConfig {
      *  - true : composite the static scoreboard into every encoded frame.
      * Same pipeline either way — this only controls whether the overlay quad is drawn.
      */
-    const val USE_OVERLAY = true
+    const val USE_OVERLAY = false
 
     /**
      * Boot defaults for the on-device GL camera-orientation toggles (see CameraOverlayVideoSource).
