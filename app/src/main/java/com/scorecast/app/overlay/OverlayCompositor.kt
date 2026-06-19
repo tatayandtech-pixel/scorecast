@@ -47,6 +47,7 @@ class OverlayCompositor(
     private val overlayPosition: OverlayPosition = OverlayPosition.BOTTOM_CENTER,
     flipHorizontal: Boolean = StreamConfig.CAMERA_FLIP_HORIZONTAL,
     flipVertical: Boolean = StreamConfig.CAMERA_FLIP_VERTICAL,
+    rotationDegrees: Int = StreamConfig.CAMERA_ROTATION_DEGREES,
 ) {
     private val thread = HandlerThread("scorecast-gl").apply { start() }
     private val handler = Handler(thread.looper)
@@ -81,11 +82,11 @@ class OverlayCompositor(
 
     private val texMatrix = FloatArray(16)
 
-    // Camera texture coords; rebuilt on the GL thread by [setFlip] for live orientation tuning.
+    // Camera texture coords; rebuilt on the GL thread by [setTransform] for live orientation tuning.
     private val fullQuadPos = floatBuffer(
         floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)
     )
-    private var cameraTexCoords = floatBuffer(cameraTexArray(flipHorizontal, flipVertical))
+    private var cameraTexCoords = floatBuffer(cameraTexArray(flipHorizontal, flipVertical, rotationDegrees))
     private var overlayPosBuf: FloatBuffer = floatBuffer(FloatArray(8))
     private val overlayTexCoords = floatBuffer(
         // V flipped: bitmaps are top-left origin, GL is bottom-left.
@@ -136,10 +137,10 @@ class OverlayCompositor(
      * coordinates on the GL thread so the operator can correct rotation/mirroring on-device
      * without recompiling. Takes effect on the next frame.
      */
-    fun setFlip(horizontal: Boolean, vertical: Boolean) {
+    fun setTransform(horizontal: Boolean, vertical: Boolean, rotationDegrees: Int) {
         handler.post {
             if (released) return@post
-            cameraTexCoords = floatBuffer(cameraTexArray(horizontal, vertical))
+            cameraTexCoords = floatBuffer(cameraTexArray(horizontal, vertical, rotationDegrees))
         }
     }
 
@@ -323,12 +324,32 @@ class OverlayCompositor(
         return floatArrayOf(left, bottom, right, bottom, left, top, right, top)
     }
 
-    private fun cameraTexArray(flipHorizontal: Boolean, flipVertical: Boolean): FloatArray {
+    private fun cameraTexArray(
+        flipHorizontal: Boolean,
+        flipVertical: Boolean,
+        rotationDegrees: Int,
+    ): FloatArray {
         var u0 = 0f; var u1 = 1f; var v0 = 0f; var v1 = 1f
         if (flipHorizontal) { val t = u0; u0 = u1; u1 = t }
         if (flipVertical) { val t = v0; v0 = v1; v1 = t }
         // Matches fullQuadPos order BL, BR, TL, TR
-        return floatArrayOf(u0, v0, u1, v0, u0, v1, u1, v1)
+        val uv = floatArrayOf(u0, v0, u1, v0, u0, v1, u1, v1)
+
+        val r = ((rotationDegrees % 360) + 360) % 360
+        if (r == 0) return uv
+        // Rotate each (u,v) clockwise about the texture centre (0.5, 0.5).
+        val out = FloatArray(8)
+        for (i in 0 until 4) {
+            val u = uv[i * 2]
+            val v = uv[i * 2 + 1]
+            when (r) {
+                90 -> { out[i * 2] = v;        out[i * 2 + 1] = 1f - u }
+                180 -> { out[i * 2] = 1f - u;  out[i * 2 + 1] = 1f - v }
+                270 -> { out[i * 2] = 1f - v;  out[i * 2 + 1] = u }
+                else -> { out[i * 2] = u;      out[i * 2 + 1] = v }
+            }
+        }
+        return out
     }
 
     private fun runBlockingOnGl(block: () -> Unit) {

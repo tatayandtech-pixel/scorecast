@@ -43,4 +43,11 @@ object StreamConfig {
      */
     const val CAMERA_FLIP_VERTICAL = false
     const val CAMERA_FLIP_HORIZONTAL = false
+
+    /**
+     * Boot default for camera rotation in degrees (0/90/180/270). Back-camera sensors are usually
+     * mounted at 90°, so a locked-landscape app often needs a rotation that the SurfaceTexture
+     * transform alone doesn't supply. The operator can cycle this live from the UI ("Rotate 90°").
+     */
+    const val CAMERA_ROTATION_DEGREES = 90
 }

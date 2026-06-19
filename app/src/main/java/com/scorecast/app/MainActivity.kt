@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -160,18 +161,24 @@ private fun StreamScreen() {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(
                         checked = flip.horizontal,
-                        onCheckedChange = { StreamerHolder.setFlip(it, flip.vertical) },
+                        onCheckedChange = { StreamerHolder.setTransform(it, flip.vertical, flip.rotation) },
                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Mirror", style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.width(16.dp))
                     Switch(
                         checked = flip.vertical,
-                        onCheckedChange = { StreamerHolder.setFlip(flip.horizontal, it) },
+                        onCheckedChange = { StreamerHolder.setTransform(flip.horizontal, it, flip.rotation) },
                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Flip", style = MaterialTheme.typography.bodySmall)
                 }
+                Spacer(Modifier.height(4.dp))
+                OutlinedButton(
+                    onClick = {
+                        StreamerHolder.setTransform(flip.horizontal, flip.vertical, flip.rotation + 90)
+                    },
+                ) { Text("Rotate 90°  (now ${flip.rotation}°)") }
             }
 
             // Fixed action bar (never scrolls off-screen).

@@ -42,14 +42,18 @@ object StreamerHolder {
     val state: StateFlow<State> = _state.asStateFlow()
 
     /** Live camera orientation tuning (spec README "Bring-up order"). */
-    data class Flip(val horizontal: Boolean, val vertical: Boolean)
+    data class Flip(val horizontal: Boolean, val vertical: Boolean, val rotation: Int)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var streamer: SingleStreamer? = null
     private var previewSurface: Surface? = null
 
     private val _flip = MutableStateFlow(
-        Flip(StreamConfig.CAMERA_FLIP_HORIZONTAL, StreamConfig.CAMERA_FLIP_VERTICAL)
+        Flip(
+            StreamConfig.CAMERA_FLIP_HORIZONTAL,
+            StreamConfig.CAMERA_FLIP_VERTICAL,
+            StreamConfig.CAMERA_ROTATION_DEGREES,
+        )
     )
     val flip: StateFlow<Flip> = _flip.asStateFlow()
 
@@ -129,8 +133,8 @@ object StreamerHolder {
     }
 
     /** Toggle camera mirroring/rotation live; persists across (re)starts within this process. */
-    fun setFlip(horizontal: Boolean, vertical: Boolean) {
-        _flip.value = Flip(horizontal, vertical)
+    fun setTransform(horizontal: Boolean, vertical: Boolean, rotation: Int) {
+        _flip.value = Flip(horizontal, vertical, ((rotation % 360) + 360) % 360)
         applyFlip()
     }
 
@@ -142,7 +146,7 @@ object StreamerHolder {
     }
 
     private fun applyFlip() {
-        _flip.value.let { source()?.setFlip(it.horizontal, it.vertical) }
+        _flip.value.let { source()?.setTransform(it.horizontal, it.vertical, it.rotation) }
     }
 
     private fun fail(t: Throwable) {

@@ -49,6 +49,7 @@ class CameraOverlayVideoSource internal constructor(
     private var previewSurface: Surface? = null
     private var flipHorizontal = StreamConfig.CAMERA_FLIP_HORIZONTAL
     private var flipVertical = StreamConfig.CAMERA_FLIP_VERTICAL
+    private var rotationDegrees = StreamConfig.CAMERA_ROTATION_DEGREES
 
     /** Operator preview SurfaceView; applied immediately if streaming, else when the stream starts. */
     fun setPreviewSurface(surface: Surface?) {
@@ -57,10 +58,11 @@ class CameraOverlayVideoSource internal constructor(
     }
 
     /** Live camera orientation tuning; applied immediately if streaming, else when the stream starts. */
-    fun setFlip(horizontal: Boolean, vertical: Boolean) {
+    fun setTransform(horizontal: Boolean, vertical: Boolean, rotation: Int) {
         flipHorizontal = horizontal
         flipVertical = vertical
-        compositor?.setFlip(horizontal, vertical)
+        rotationDegrees = rotation
+        compositor?.setTransform(horizontal, vertical, rotation)
     }
 
     // --- ISurfaceSourceInternal ---
@@ -97,6 +99,7 @@ class CameraOverlayVideoSource internal constructor(
             overlayPosition = OverlayPosition.BOTTOM_CENTER,
             flipHorizontal = flipHorizontal,
             flipVertical = flipVertical,
+            rotationDegrees = rotationDegrees,
         )
         comp.start()
         previewSurface?.let { comp.setPreviewSurface(it) }
