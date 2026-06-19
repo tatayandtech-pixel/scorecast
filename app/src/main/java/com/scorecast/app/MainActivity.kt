@@ -8,6 +8,8 @@ import android.view.SurfaceView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -109,7 +111,12 @@ private fun StreamScreen() {
 
         Spacer(Modifier.width(20.dp))
 
-        Column(modifier = Modifier.fillMaxHeight().fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+        ) {
             Text("ScoreCast — Phase 1", style = MaterialTheme.typography.titleLarge)
             Text(
                 "Static burned-in scoreboard → RTMP",
