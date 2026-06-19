@@ -1,4 +1,7 @@
 [versions]
+# Pinned to a stable set that supports compileSdk 36. Do NOT let Studio's Upgrade
+# Assistant bump these to AGP 9.x — AGP 9 has built-in Kotlin and double-registers the
+# `kotlin` extension against the kotlin-android plugin (build fails to apply).
 agp = "8.13.2"
 kotlin = "2.1.0"
 coreKtx = "1.15.0"
