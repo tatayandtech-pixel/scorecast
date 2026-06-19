@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose drives all UI; this only needs to be a no-action-bar host theme. -->
+    <style name="Theme.ScoreCast" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
