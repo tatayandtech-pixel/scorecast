@@ -31,7 +31,7 @@ import java.nio.FloatBuffer
  *
  *   Camera2 (StreamPack CameraSource) --> cameraInputSurface (external-OES SurfaceTexture)
  *        --> [this GL renderer: draw camera quad, then alpha-blend the overlay quad]
- *        --> outputSurface (StreamPack's encoder/processor input)  ==> H.264 ==> RTMP
+ *        --> outputSurface (StreamPack's encoder/processor input)  ==> H.264 ==> RTMPS
  *        --> previewSurface (operator's on-screen SurfaceView, optional)
  *
  * Everything runs on one dedicated GL thread that owns the EGL context.

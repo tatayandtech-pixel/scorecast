@@ -122,7 +122,7 @@ private fun StreamScreen() {
             OutlinedTextField(
                 value = ingestUrl,
                 onValueChange = { ingestUrl = it },
-                label = { Text("RTMP ingest URL") },
+                label = { Text("RTMP(S) ingest URL") },
                 singleLine = true,
                 enabled = !live,
                 modifier = Modifier.fillMaxWidth(),

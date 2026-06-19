@@ -16,7 +16,7 @@ enum class OverlayPosition { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_CENTER, BO
 
 /**
  * Builds the Phase 1 STATIC test scoreboard. No live state, no clock — just a recognizable
- * graphic so we can confirm it is burned into the encoded frames reaching YouTube.
+ * graphic so we can confirm it is burned into the encoded frames reaching Facebook Live.
  */
 object ScoreboardOverlay {
 
