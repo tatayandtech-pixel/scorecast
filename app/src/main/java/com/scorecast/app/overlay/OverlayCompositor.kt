@@ -44,7 +44,6 @@ class OverlayCompositor(
     private val outputSurface: Surface,
     private val size: Size,
     private val overlayBitmap: Bitmap?,
-    private val overlayPosition: OverlayPosition = OverlayPosition.BOTTOM_CENTER,
     flipHorizontal: Boolean = StreamConfig.CAMERA_FLIP_HORIZONTAL,
     flipVertical: Boolean = StreamConfig.CAMERA_FLIP_VERTICAL,
     rotationDegrees: Int = StreamConfig.CAMERA_ROTATION_DEGREES,
@@ -87,7 +86,8 @@ class OverlayCompositor(
         floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)
     )
     private var cameraTexCoords = floatBuffer(cameraTexArray(flipHorizontal, flipVertical, rotationDegrees))
-    private var overlayPosBuf: FloatBuffer = floatBuffer(FloatArray(8))
+    // Full-frame NDC quad: overlay bitmap covers the entire frame, positioning is done in Canvas space.
+    private val overlayPosBuf: FloatBuffer = floatBuffer(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
     private val overlayTexCoords = floatBuffer(
         // V flipped: bitmaps are top-left origin, GL is bottom-left.
         floatArrayOf(0f, 1f, 1f, 1f, 0f, 0f, 1f, 0f)
@@ -287,8 +287,19 @@ class OverlayCompositor(
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, overlayTexId)
         GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
-        overlayPosBuf = floatBuffer(overlayQuad(bmp.width, bmp.height))
         overlayReady = true
+    }
+
+    /** Replace the overlay bitmap live. Bitmap must be full-frame size. Safe to call from any thread. */
+    fun updateOverlay(bitmap: Bitmap) {
+        handler.post {
+            if (released) return@post
+            if (overlayTexId == 0) overlayTexId = genTexture(GLES20.GL_TEXTURE_2D)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, overlayTexId)
+            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+            overlayReady = true
+        }
     }
 
     private fun initPrograms() {
@@ -296,32 +307,15 @@ class OverlayCompositor(
         oesPosLoc = GLES20.glGetAttribLocation(oesProgram, "aPos")
         oesTexLoc = GLES20.glGetAttribLocation(oesProgram, "aTex")
         oesMatrixLoc = GLES20.glGetUniformLocation(oesProgram, "uTexMatrix")
+        check(oesPosLoc >= 0) { "OES shader: 'aPos' not found (loc=$oesPosLoc)" }
+        check(oesTexLoc >= 0) { "OES shader: 'aTex' not found (loc=$oesTexLoc)" }
+        check(oesMatrixLoc >= 0) { "OES shader: 'uTexMatrix' not found (loc=$oesMatrixLoc)" }
 
         twoDProgram = buildProgram(VERTEX_2D_SHADER, TWOD_FRAGMENT_SHADER)
         twoDPosLoc = GLES20.glGetAttribLocation(twoDProgram, "aPos")
         twoDTexLoc = GLES20.glGetAttribLocation(twoDProgram, "aTex")
-    }
-
-    /** Places the overlay bitmap at [overlayPosition] in NDC, preserving pixel size, with a margin. */
-    private fun overlayQuad(wPx: Int, hPx: Int): FloatArray {
-        val marginX = 0.03f
-        val marginY = 0.05f
-        val halfW = (wPx.toFloat() / size.width)   // 0..1 of half-frame -> NDC width = 2*ratio
-        val halfH = (hPx.toFloat() / size.height)
-        val w = halfW * 2f
-        val h = halfH * 2f
-
-        val (left, top) = when (overlayPosition) {
-            OverlayPosition.TOP_LEFT -> -1f + marginX * 2 to 1f - marginY * 2
-            OverlayPosition.TOP_RIGHT -> 1f - marginX * 2 - w to 1f - marginY * 2
-            OverlayPosition.BOTTOM_LEFT -> -1f + marginX * 2 to -1f + marginY * 2 + h
-            OverlayPosition.BOTTOM_RIGHT -> 1f - marginX * 2 - w to -1f + marginY * 2 + h
-            OverlayPosition.BOTTOM_CENTER -> -w / 2f to -1f + marginY * 2 + h
-        }
-        val right = left + w
-        val bottom = top - h
-        // Triangle strip: BL, BR, TL, TR
-        return floatArrayOf(left, bottom, right, bottom, left, top, right, top)
+        check(twoDPosLoc >= 0) { "2D shader: 'aPos' not found (loc=$twoDPosLoc)" }
+        check(twoDTexLoc >= 0) { "2D shader: 'aTex' not found (loc=$twoDTexLoc)" }
     }
 
     private fun cameraTexArray(

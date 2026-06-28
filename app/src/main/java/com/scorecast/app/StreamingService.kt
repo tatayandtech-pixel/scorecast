@@ -10,7 +10,6 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import androidx.annotation.RequiresPermission
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import kotlinx.coroutines.CoroutineScope
@@ -18,26 +17,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.io.File
 
-/**
- * Foreground service that keeps the capture + RTMP pipeline alive when the app is backgrounded
- * (spec §10). Android 14 requires the camera|microphone service type both in the manifest and at
- * [ServiceCompat.startForeground].
- */
 class StreamingService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    @RequiresPermission(allOf = [Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO])
+    @androidx.annotation.RequiresPermission(allOf = [Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO])
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
                 startAsForeground()
                 val url = intent.getStringExtra(EXTRA_URL).orEmpty()
                 val key = intent.getStringExtra(EXTRA_KEY).orEmpty()
-                scope.launch { StreamerHolder.start(applicationContext, url, key) }
+                val modeOrdinal = intent.getIntExtra(EXTRA_MODE, RecordingMode.STREAM_ONLY.ordinal)
+                val mode = RecordingMode.entries[modeOrdinal]
+                val filePath = intent.getStringExtra(EXTRA_FILE)
+                val file = filePath?.let { File(it) }
+                scope.launch { StreamerHolder.start(applicationContext, url, key, mode, file) }
             }
             ACTION_STOP -> {
                 scope.launch {
@@ -59,8 +58,7 @@ class StreamingService : Service() {
             .setOngoing(true)
             .build()
 
-        val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         ServiceCompat.startForeground(this, NOTIF_ID, notification, type)
     }
 
@@ -72,21 +70,14 @@ class StreamingService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val mgr = getSystemService(NotificationManager::class.java)
             if (mgr.getNotificationChannel(CHANNEL_ID) == null) {
-                mgr.createNotificationChannel(
-                    NotificationChannel(
-                        CHANNEL_ID,
-                        getString(R.string.notif_channel_name),
-                        NotificationManager.IMPORTANCE_LOW,
-                    )
-                )
+                mgr.createNotificationChannel(NotificationChannel(
+                    CHANNEL_ID, getString(R.string.notif_channel_name), NotificationManager.IMPORTANCE_LOW
+                ))
             }
         }
     }
 
-    override fun onDestroy() {
-        scope.cancel()
-        super.onDestroy()
-    }
+    override fun onDestroy() { scope.cancel(); super.onDestroy() }
 
     companion object {
         private const val CHANNEL_ID = "scorecast_stream"
@@ -95,20 +86,28 @@ class StreamingService : Service() {
         private const val ACTION_STOP = "com.scorecast.app.STOP"
         private const val EXTRA_URL = "url"
         private const val EXTRA_KEY = "key"
+        private const val EXTRA_MODE = "mode"
+        private const val EXTRA_FILE = "file"
 
-        fun start(context: Context, ingestUrl: String, streamKey: String) {
+        fun start(
+            context: Context,
+            ingestUrl: String,
+            streamKey: String,
+            mode: RecordingMode = RecordingMode.STREAM_ONLY,
+            recordingFile: File? = null,
+        ) {
             val intent = Intent(context, StreamingService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_URL, ingestUrl)
                 putExtra(EXTRA_KEY, streamKey)
+                putExtra(EXTRA_MODE, mode.ordinal)
+                recordingFile?.let { putExtra(EXTRA_FILE, it.absolutePath) }
             }
             context.startForegroundService(intent)
         }
 
         fun stop(context: Context) {
-            context.startService(
-                Intent(context, StreamingService::class.java).apply { action = ACTION_STOP }
-            )
+            context.startService(Intent(context, StreamingService::class.java).apply { action = ACTION_STOP })
         }
     }
 }

@@ -8,9 +8,13 @@ import android.media.AudioFormat
 import android.util.Log
 import android.view.Surface
 import androidx.annotation.RequiresPermission
+import com.scorecast.app.overlay.CameraOverlayVideoSource
 import com.scorecast.app.overlay.CameraOverlayVideoSourceFactory
 import com.scorecast.app.overlay.ScoreboardOverlay
 import io.github.thibaultbee.streampack.core.configuration.mediadescriptor.UriMediaDescriptor
+import io.github.thibaultbee.streampack.core.elements.endpoints.CombineEndpoint
+import io.github.thibaultbee.streampack.core.elements.endpoints.CombineEndpointFactory
+import io.github.thibaultbee.streampack.core.elements.endpoints.DynamicEndpointFactory
 import io.github.thibaultbee.streampack.core.elements.sources.audio.audiorecord.MicrophoneSourceFactory
 import io.github.thibaultbee.streampack.core.streamers.single.AudioConfig
 import io.github.thibaultbee.streampack.core.streamers.single.SingleStreamer
@@ -22,13 +26,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
-/**
- * Owns the single StreamPack pipeline for Phase 1 and exposes a small state surface.
- *
- * Lives outside the Activity so the stream is unaffected by configuration changes / backgrounding;
- * [StreamingService] keeps the process alive while this is streaming.
- */
 object StreamerHolder {
 
     sealed interface State {
@@ -41,7 +40,6 @@ object StreamerHolder {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
-    /** Live camera orientation tuning (spec README "Bring-up order"). */
     data class Flip(val horizontal: Boolean, val vertical: Boolean, val rotation: Int)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -49,65 +47,82 @@ object StreamerHolder {
     private var previewSurface: Surface? = null
 
     private val _flip = MutableStateFlow(
-        Flip(
-            StreamConfig.CAMERA_FLIP_HORIZONTAL,
-            StreamConfig.CAMERA_FLIP_VERTICAL,
-            StreamConfig.CAMERA_ROTATION_DEGREES,
-        )
+        Flip(StreamConfig.CAMERA_FLIP_HORIZONTAL, StreamConfig.CAMERA_FLIP_VERTICAL, StreamConfig.CAMERA_ROTATION_DEGREES)
     )
     val flip: StateFlow<Flip> = _flip.asStateFlow()
+
+    private val _zoomRatio = MutableStateFlow(1f)
+    val zoomRatio: StateFlow<Float> = _zoomRatio.asStateFlow()
+
+    /** The file being recorded in the current session; null for stream-only mode. */
+    var currentRecordingFile: File? = null
+        private set
 
     val isStreaming: Boolean get() = _state.value is State.Live || _state.value is State.Starting
 
     @RequiresPermission(allOf = [Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO])
-    suspend fun start(context: Context, ingestUrl: String, streamKey: String) {
+    suspend fun start(
+        context: Context,
+        ingestUrl: String,
+        streamKey: String,
+        mode: RecordingMode = RecordingMode.STREAM_ONLY,
+        recordingFile: File? = null,
+    ) {
         if (streamer != null) return
         _state.value = State.Starting
+        currentRecordingFile = recordingFile
         try {
             val cameraId = backCameraId(context)
             val videoSourceFactory = CameraOverlayVideoSourceFactory(cameraId) { size ->
-                if (StreamConfig.USE_OVERLAY) ScoreboardOverlay.createStatic(size) else null
+                val state = GameStateHolder.state.value
+                ScoreboardOverlay.create(state, LogoHolder.logos.value, SportConfigLoader.getCached(state.sport), size)
+            }
+
+            val endpointFactory = when (mode) {
+                RecordingMode.STREAM_ONLY, RecordingMode.RECORD_ONLY -> DynamicEndpointFactory()
+                RecordingMode.STREAM_AND_RECORD -> CombineEndpointFactory(
+                    DynamicEndpointFactory(), DynamicEndpointFactory()
+                )
             }
 
             val s = SingleStreamer(
                 context = context.applicationContext,
                 audioSourceFactory = MicrophoneSourceFactory(),
                 videoSourceFactory = videoSourceFactory,
+                endpointFactory = endpointFactory,
             )
-            s.setVideoConfig(
-                VideoConfig(
-                    startBitrate = StreamConfig.VIDEO_BITRATE,
-                    resolution = StreamConfig.RESOLUTION,
-                    fps = StreamConfig.FPS,
-                )
-            )
-            s.setAudioConfig(
-                AudioConfig(
-                    startBitrate = StreamConfig.AUDIO_BITRATE,
-                    sampleRate = StreamConfig.AUDIO_SAMPLE_RATE,
-                    channelConfig = AudioFormat.CHANNEL_IN_STEREO,
-                )
-            )
+            s.setVideoConfig(VideoConfig(
+                startBitrate = StreamConfig.VIDEO_BITRATE,
+                resolution = StreamConfig.RESOLUTION,
+                fps = StreamConfig.FPS,
+            ))
+            s.setAudioConfig(AudioConfig(
+                startBitrate = StreamConfig.AUDIO_BITRATE,
+                sampleRate = StreamConfig.AUDIO_SAMPLE_RATE,
+                channelConfig = AudioFormat.CHANNEL_IN_STEREO,
+            ))
             streamer = s
 
-            // Wire operator preview + current flip state into our custom source.
             applyPreview()
             applyFlip()
 
-            // Surface error propagation from the pipeline.
-            scope.launch {
-                s.throwableFlow.collect { t -> if (t != null) fail(t) }
+            scope.launch { s.throwableFlow.collect { t -> if (t != null) fail(t) } }
+
+            val descriptor = when (mode) {
+                RecordingMode.STREAM_ONLY -> UriMediaDescriptor(buildRtmpUrl(ingestUrl, streamKey))
+                RecordingMode.RECORD_ONLY -> UriMediaDescriptor(requireNotNull(recordingFile).toUri())
+                RecordingMode.STREAM_AND_RECORD -> CombineEndpoint.CombineDescriptor(listOf(
+                    UriMediaDescriptor(buildRtmpUrl(ingestUrl, streamKey)),
+                    UriMediaDescriptor(requireNotNull(recordingFile).toUri()),
+                ))
             }
 
-            val url = buildRtmpUrl(ingestUrl, streamKey)
-            s.open(UriMediaDescriptor(url))
+            s.open(descriptor)
             s.startStream()
-            // Re-apply in case StreamPack created the video source lazily during startStream();
-            // by now the source (and its compositor) certainly exist.
             applyFlip()
             applyPreview()
             _state.value = State.Live
-            Log.i(TAG, "Streaming to $url")
+            Log.i(TAG, "Started: mode=$mode")
         } catch (t: Throwable) {
             fail(t)
         }
@@ -116,6 +131,7 @@ object StreamerHolder {
     suspend fun stop() {
         val s = streamer ?: run { _state.value = State.Idle; return }
         streamer = null
+        currentRecordingFile = null
         try {
             s.stopStream()
             s.close()
@@ -132,22 +148,21 @@ object StreamerHolder {
         applyPreview()
     }
 
-    /** Toggle camera mirroring/rotation live; persists across (re)starts within this process. */
     fun setTransform(horizontal: Boolean, vertical: Boolean, rotation: Int) {
         _flip.value = Flip(horizontal, vertical, ((rotation % 360) + 360) % 360)
         applyFlip()
     }
 
-    private fun source(): com.scorecast.app.overlay.CameraOverlayVideoSource? =
-        streamer?.videoInput?.sourceFlow?.value as? com.scorecast.app.overlay.CameraOverlayVideoSource
-
-    private fun applyPreview() {
-        source()?.setPreviewSurface(previewSurface)
+    fun setZoomRatio(ratio: Float) {
+        _zoomRatio.value = ratio.coerceAtLeast(1f)
+        source()?.setZoomRatio(ratio)
     }
 
-    private fun applyFlip() {
-        _flip.value.let { source()?.setTransform(it.horizontal, it.vertical, it.rotation) }
-    }
+    private fun source(): CameraOverlayVideoSource? =
+        streamer?.videoInput?.sourceFlow?.value as? CameraOverlayVideoSource
+
+    private fun applyPreview() { source()?.setPreviewSurface(previewSurface) }
+    private fun applyFlip() { _flip.value.let { source()?.setTransform(it.horizontal, it.vertical, it.rotation) } }
 
     private fun fail(t: Throwable) {
         Log.e(TAG, "Stream error", t)
@@ -155,12 +170,13 @@ object StreamerHolder {
         scope.launch { runCatching { stop() } }
     }
 
-    /** Joins the pasted ingest URL and stream key into a single RTMP target URL. */
     private fun buildRtmpUrl(ingestUrl: String, streamKey: String): String {
         val base = ingestUrl.trim().trimEnd('/')
         val key = streamKey.trim().trimStart('/')
         return if (key.isEmpty()) base else "$base/$key"
     }
+
+    private fun File.toUri(): String = "file://${absolutePath}"
 
     private fun backCameraId(context: Context): String {
         val cm = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager

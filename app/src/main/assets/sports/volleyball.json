@@ -1,0 +1,12 @@
+{
+  "sport": "volleyball",
+  "displayName": "Volleyball",
+  "scoringModel": "flat",
+  "usesPlayers": false,
+  "periods": 5,
+  "periodLabel": "Set",
+  "periodLength": 0,
+  "clockDirection": "none",
+  "scoreIncrements": [1],
+  "extraFields": []
+}

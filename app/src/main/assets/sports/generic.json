@@ -1,0 +1,12 @@
+{
+  "sport": "generic",
+  "displayName": "Generic",
+  "scoringModel": "flat",
+  "usesPlayers": false,
+  "periods": 2,
+  "periodLabel": "Period",
+  "periodLength": 600,
+  "clockDirection": "down",
+  "scoreIncrements": [1],
+  "extraFields": []
+}

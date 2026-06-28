@@ -1,0 +1,15 @@
+{
+  "sport": "hockey",
+  "displayName": "Hockey",
+  "scoringModel": "flat",
+  "usesPlayers": false,
+  "periods": 3,
+  "periodLabel": "P",
+  "periodLength": 1200,
+  "clockDirection": "down",
+  "scoreIncrements": [1],
+  "extraFields": [
+    { "key": "penalties", "label": "Penalties", "perTeam": true, "max": null },
+    { "key": "shots",     "label": "Shots",     "perTeam": true, "max": null }
+  ]
+}

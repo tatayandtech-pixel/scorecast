@@ -7,56 +7,154 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.Size
+import com.scorecast.app.GameState
+import com.scorecast.app.LogoEntry
+import com.scorecast.app.LogoHolder
+import com.scorecast.app.OverlayPosition
+import com.scorecast.app.SportConfig
+import com.scorecast.app.clockDisplay
+import com.scorecast.app.toClockString
 
-/**
- * Overlay anchor inside the 16:9 frame. Phase 1 ships only the static graphic; the five
- * selectable positions from spec §7 are wired here so Phase 2 can drive them from state.
- */
-enum class OverlayPosition { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_CENTER, BOTTOM_RIGHT }
-
-/**
- * Builds the Phase 1 STATIC test scoreboard. No live state, no clock — just a recognizable
- * graphic so we can confirm it is burned into the encoded frames reaching Facebook Live.
- */
 object ScoreboardOverlay {
 
-    /** Renders the scoreboard bar once into an ARGB_8888 bitmap sized for [frame]. */
-    fun createStatic(frame: Size): Bitmap {
-        // Size the bar relative to the frame so it looks right at any resolution.
-        val barWidth = (frame.width * 0.42f).toInt().coerceAtLeast(360)
-        val barHeight = (frame.height * 0.14f).toInt().coerceAtLeast(96)
-
-        val bmp = Bitmap.createBitmap(barWidth, barHeight, Bitmap.Config.ARGB_8888)
+    fun create(state: GameState, logos: List<LogoEntry>, config: SportConfig?, frame: Size): Bitmap {
+        val bmp = Bitmap.createBitmap(frame.width, frame.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
-
-        val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(210, 12, 14, 20) }
-        val accent = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(255, 0, 200, 120) }
-        val white = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        }
-        val dim = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(255, 170, 178, 190)
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        }
-
-        val r = barHeight * 0.18f
-        canvas.drawRoundRect(RectF(0f, 0f, barWidth.toFloat(), barHeight.toFloat()), r, r, bg)
-        // Accent strip down the left edge.
-        canvas.drawRoundRect(RectF(0f, 0f, barHeight * 0.10f, barHeight.toFloat()), r, r, accent)
-
-        val cx = barWidth / 2f
-        val score = barHeight * 0.46f
-        val label = barHeight * 0.18f
-
-        white.textSize = score
-        canvas.drawText("LIONS  00  :  00  TIGERS", cx, barHeight * 0.46f, white)
-
-        dim.textSize = label
-        canvas.drawText("Q1   •   10:00   •   SCORECAST TEST", cx, barHeight * 0.80f, dim)
-
+        drawLogos(canvas, logos, frame)
+        drawScoreboard(canvas, state, config, frame)
         return bmp
     }
+
+    // ---- scoreboard bar ----
+
+    private fun drawScoreboard(canvas: Canvas, state: GameState, config: SportConfig?, frame: Size) {
+        val perTeamFields = config?.extraFields?.filter { it.perTeam } ?: emptyList()
+        val hasExtras = perTeamFields.isNotEmpty()
+
+        val baseBarH = (frame.height * 0.15f).toInt().coerceAtLeast(108)
+        val barW = (frame.width * 0.54f).toInt().coerceAtLeast(480)
+        val barH = if (hasExtras) (baseBarH * 1.38f).toInt() else baseBarH
+        val marginX = (frame.width * 0.02f).toInt()
+        val marginY = (frame.height * 0.03f).toInt()
+
+        val barLeft = when (state.overlayPosition) {
+            OverlayPosition.TOP_LEFT, OverlayPosition.BOTTOM_LEFT -> marginX.toFloat()
+            OverlayPosition.TOP_RIGHT, OverlayPosition.BOTTOM_RIGHT -> (frame.width - barW - marginX).toFloat()
+            OverlayPosition.BOTTOM_CENTER -> ((frame.width - barW) / 2f)
+        }
+        val barTop = when (state.overlayPosition) {
+            OverlayPosition.TOP_LEFT, OverlayPosition.TOP_RIGHT -> marginY.toFloat()
+            else -> (frame.height - barH - marginY).toFloat()
+        }
+
+        canvas.save()
+        canvas.translate(barLeft, barTop)
+        drawBar(canvas, state, perTeamFields, barW, barH)
+        canvas.restore()
+    }
+
+    private fun drawBar(
+        canvas: Canvas,
+        state: GameState,
+        perTeamFields: List<com.scorecast.app.ExtraFieldConfig>,
+        barW: Int,
+        barH: Int,
+    ) {
+        val hasExtras = perTeamFields.isNotEmpty()
+        val homeColor = parseColor(state.homeColorHex, Color.argb(255, 30, 64, 175))
+        val awayColor = parseColor(state.awayColorHex, Color.argb(255, 185, 28, 28))
+
+        val r = barH * 0.14f
+        canvas.drawRoundRect(RectF(0f, 0f, barW.toFloat(), barH.toFloat()), r, r,
+            paint { color = Color.argb(220, 10, 12, 18) })
+
+        val stripW = barH * 0.09f
+        canvas.drawRoundRect(RectF(0f, 0f, stripW, barH.toFloat()), r, r, paint { color = homeColor })
+        canvas.drawRoundRect(RectF(barW - stripW, 0f, barW.toFloat(), barH.toFloat()), r, r, paint { color = awayColor })
+
+        val cx = barW / 2f
+        canvas.drawRect(cx - 1f, barH * 0.12f, cx + 1f, barH * 0.88f,
+            paint { color = Color.argb(80, 255, 255, 255) })
+
+        val scoreSize = barH * 0.44f
+        val nameSize  = barH * 0.20f
+        val infoSize  = barH * 0.16f
+        val pad = stripW + barH * 0.06f
+
+        val whiteBold = paint {
+            color = Color.WHITE
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val dimPaint = paint {
+            color = Color.argb(200, 170, 180, 195)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+        }
+
+        // Y positions chosen so no row overlaps the one below it.
+        // scoreSize cap-height ≈ 0.7 × scoreSize; digits have no descenders.
+        val nameY   = barH * if (hasExtras) 0.24f else 0.28f
+        val scoreY  = barH * if (hasExtras) 0.62f else 0.70f
+        val infoY   = barH * if (hasExtras) 0.80f else 0.90f
+        val extrasY = barH * 0.95f
+
+        // Names row.
+        whiteBold.textSize = nameSize; whiteBold.textAlign = Paint.Align.LEFT
+        canvas.drawText(state.homeTeam, pad, nameY, whiteBold)
+        whiteBold.textAlign = Paint.Align.RIGHT
+        canvas.drawText(state.awayTeam, barW - pad, nameY, whiteBold)
+
+        // Scores row.
+        whiteBold.textSize = scoreSize; whiteBold.textAlign = Paint.Align.RIGHT
+        canvas.drawText(state.homeScore.toString(), cx - barH * 0.12f, scoreY, whiteBold)
+        whiteBold.textAlign = Paint.Align.LEFT
+        canvas.drawText(state.awayScore.toString(), cx + barH * 0.12f, scoreY, whiteBold)
+
+        // Period / clock / custom text row.
+        val clock = state.clockDisplay().toClockString()
+        val center = buildString {
+            append("${state.periodLabel}${state.period}  •  $clock")
+            if (state.customText.isNotBlank()) append("  •  ${state.customText}")
+        }
+        dimPaint.textSize = infoSize; dimPaint.textAlign = Paint.Align.CENTER
+        canvas.drawText(center, cx, infoY, dimPaint)
+
+        // Extra-fields row (fouls, cards, etc.) when the sport defines perTeam stats.
+        if (hasExtras) {
+            val extrasSize = infoSize * 0.88f
+            val homeExtras = perTeamFields.joinToString("  ") { ef ->
+                "${ef.label.take(3)}:${state.extraFields["${ef.key}_home"] ?: 0}"
+            }
+            val awayExtras = perTeamFields.joinToString("  ") { ef ->
+                "${ef.label.take(3)}:${state.extraFields["${ef.key}_away"] ?: 0}"
+            }
+            dimPaint.textSize = extrasSize; dimPaint.textAlign = Paint.Align.LEFT
+            canvas.drawText(homeExtras, pad, extrasY, dimPaint)
+            dimPaint.textAlign = Paint.Align.RIGHT
+            canvas.drawText(awayExtras, barW - pad, extrasY, dimPaint)
+        }
+    }
+
+    // ---- logos ----
+
+    private fun drawLogos(canvas: Canvas, logos: List<LogoEntry>, frame: Size) {
+        val logoPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        val baseW = frame.width * 0.14f
+
+        for (logo in logos) {
+            val bmp = LogoHolder.getBitmap(logo.id) ?: continue
+            val logoW = (baseW * logo.scale).coerceAtLeast(1f)
+            val logoH = bmp.height * logoW / bmp.width
+            val x = frame.width * logo.normalizedX
+            val y = frame.height * logo.normalizedY
+            canvas.drawBitmap(bmp, null, RectF(x, y, x + logoW, y + logoH), logoPaint)
+        }
+    }
+
+    // ---- helpers ----
+
+    private fun parseColor(hex: String, fallback: Int): Int =
+        try { Color.parseColor(hex) } catch (_: Exception) { fallback }
+
+    private inline fun paint(block: Paint.() -> Unit): Paint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply(block)
 }

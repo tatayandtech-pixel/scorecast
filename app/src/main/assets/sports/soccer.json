@@ -1,0 +1,15 @@
+{
+  "sport": "soccer",
+  "displayName": "Soccer",
+  "scoringModel": "flat",
+  "usesPlayers": false,
+  "periods": 2,
+  "periodLabel": "Half",
+  "periodLength": 0,
+  "clockDirection": "up",
+  "scoreIncrements": [1],
+  "extraFields": [
+    { "key": "yellow", "label": "Yellow", "perTeam": true, "max": null },
+    { "key": "red",    "label": "Red",    "perTeam": true, "max": null }
+  ]
+}

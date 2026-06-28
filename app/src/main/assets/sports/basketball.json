@@ -1,0 +1,15 @@
+{
+  "sport": "basketball",
+  "displayName": "Basketball",
+  "scoringModel": "flat",
+  "usesPlayers": false,
+  "periods": 4,
+  "periodLabel": "Q",
+  "periodLength": 600,
+  "clockDirection": "down",
+  "scoreIncrements": [1, 2, 3],
+  "extraFields": [
+    { "key": "fouls",    "label": "Fouls",    "perTeam": true, "max": null },
+    { "key": "timeouts", "label": "Timeouts", "perTeam": true, "max": 7 }
+  ]
+}
