@@ -1,79 +1,161 @@
-# ScoreCast — Phase 1
+# ScoreCast
 
-Phase 1 of the spec only: a **landscape** Kotlin/Compose app that captures the camera, **burns a
-static test scoreboard into every encoded frame**, encodes H.264, and pushes **RTMPS** to a
-manually-pasted ingest URL + stream key. Primary target is **Facebook Live** (YouTube is a
-secondary target). Success = the burned-in graphic appears on a live Facebook broadcast.
+A sideloaded Android app for live sports broadcasting with a burned-in scoreboard overlay, RTMP streaming to Facebook Live / YouTube / custom endpoints, and a QR-paired remote scoring device (Phase 5).
 
-Nothing from later phases is here — no Firebase, scoring logic, QR pairing, mirror device, clock,
-auto-update, or platform picker.
+---
 
-## Stack
+## Features
 
-- Kotlin, Jetpack Compose, `minSdk 26`, `targetSdk 34`, `compileSdk 36`
-- **StreamPack 3.1.2** (`io.github.thibaultbee.streampack:streampack-core` + `:streampack-rtmp`)
-  for capture → composite → H.264 → RTMP. The RTMP endpoint is discovered reflectively by
-  StreamPack's `DynamicEndpoint`, so `:streampack-rtmp` must stay on the classpath.
+| Feature | Status |
+|---|---|
+| RTMP/RTMPS live streaming (Facebook, YouTube, custom) | ✅ |
+| Burned-in scoreboard overlay (OpenGL ES 2.0, encoded into video) | ✅ |
+| Config-driven sports (Basketball, Soccer, Volleyball, Hockey, Generic) | ✅ |
+| Dynamic score buttons (+1/+2/+3 for basketball, +1 for others) | ✅ |
+| Extra-field stats (fouls, timeouts, yellow/red cards, penalties, shots) | ✅ |
+| Count-up clock (soccer), count-down (basketball/hockey), no clock (volleyball) | ✅ |
+| Logo overlay with position & scale controls | ✅ |
+| Local MP4 recording (stream-only / record-only / simultaneous) | ✅ |
+| Pinch-to-zoom + mirror / flip / rotate orientation | ✅ |
+| Fullscreen camera when live; tabbed setup panel before going live | ✅ |
+| QR-based remote scoring device (Firebase sync) | 🔜 Phase 5 |
+| Racket sports — sets/games model (tennis, badminton) | 🔜 Phase 7 |
 
-## How the burn-in works (important)
+---
 
-StreamPack 3.x has **no overlay API**, and its GL surface processor is `private`. The supported seam
-is a **custom video source**, so:
+## Requirements
+
+- Android 8.0+ (API 26), tested on Android 11
+- Camera + Microphone permissions
+- Internet access for RTMP streaming
+
+---
+
+## Build
+
+### Prerequisites
+
+- Android Studio (Hedgehog or later)
+- JDK bundled with Android Studio
+
+### From the command line (Windows)
+
+```powershell
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+.\gradlew.bat assembleDebug
+```
+
+### Install to a connected device
+
+```powershell
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+$env:ANDROID_HOME = "C:\Users\<you>\AppData\Local\Android\Sdk"
+.\gradlew.bat installDebug
+& "$env:ANDROID_HOME\platform-tools\adb.exe" shell am start -n com.scorecast.app/.MainActivity
+```
+
+---
+
+## Usage
+
+1. Open the app — you land on the **Setup panel**
+2. **Scoring tab**: pick a sport, enter team names, adjust colors, add logos
+3. **Stream tab**: enter your RTMP ingest URL and stream key, choose Stream / Record / Both
+4. Tap **Go Live** — camera goes fullscreen with the scoreboard burned in
+5. Tap **📊 Score** to slide in the scoring panel while broadcasting
+6. Adjust scores, clock, and stats live; overlay updates every 250 ms
+7. Tap **⏹ Stop** to end the broadcast
+
+### Getting a Facebook Live stream key
+
+1. Go to **facebook.com/live/producer** → **Streaming software**
+2. Copy the **Server URL** (`rtmps://live-api-s.facebook.com:443/rtmp/`) and **Stream Key**
+3. Paste both into ScoreCast's Stream tab
+
+---
+
+## Sport configs
+
+Sports are defined in `app/src/main/assets/sports/*.json`. Add a new sport by dropping in a JSON file — no code change required.
+
+```json
+{
+  "sport": "basketball",
+  "displayName": "Basketball",
+  "scoringModel": "flat",
+  "periods": 4,
+  "periodLabel": "Q",
+  "periodLength": 600,
+  "clockDirection": "down",
+  "scoreIncrements": [1, 2, 3],
+  "extraFields": [
+    { "key": "fouls",    "label": "Fouls",    "perTeam": true, "max": null },
+    { "key": "timeouts", "label": "Timeouts", "perTeam": true, "max": 7 }
+  ]
+}
+```
+
+| Field | Values |
+|---|---|
+| `clockDirection` | `"down"` (basketball/hockey), `"up"` (soccer), `"none"` (volleyball) |
+| `scoringModel` | `"flat"` (current), `"setsGames"` (Phase 7 — racket sports) |
+| `scoreIncrements` | Array of point values — buttons are generated dynamically |
+
+Bundled sports: **Basketball**, **Soccer**, **Volleyball**, **Hockey**, **Generic**
+
+---
+
+## Architecture
 
 ```
-CameraSource (StreamPack Camera2)
-   → OverlayCompositor (our GL: draw camera, then alpha-blend the scoreboard)
-      → encoder/processor surface  → H.264 → RTMPS → Facebook Live
-      → operator preview SurfaceView (optional)
+Camera
+  └── CameraOverlayVideoSource  (StreamPack IVideoSourceInternal)
+        └── OverlayCompositor   (OpenGL ES 2.0)
+              ├── OES camera texture
+              └── 2D overlay texture ← ScoreboardOverlay.create(GameState, logos, SportConfig, size)
+                                                                ↑
+                                                     GameStateHolder (StateFlow)
+                                                     LogoHolder     (StateFlow)
+                                                     SportConfigLoader (JSON cache)
+        └── SingleStreamer       (StreamPack 3.1.2)
+              └── CombineEndpointFactory → RTMP stream + local MP4
 ```
 
-Key files:
-- [`overlay/OverlayCompositor.kt`](app/src/main/java/com/scorecast/app/overlay/OverlayCompositor.kt) — EGL/GLES2 compositor (the burn-in).
-- [`overlay/CameraOverlayVideoSource.kt`](app/src/main/java/com/scorecast/app/overlay/CameraOverlayVideoSource.kt) — wraps StreamPack's `CameraSource` and feeds the compositor.
-- [`overlay/ScoreboardOverlay.kt`](app/src/main/java/com/scorecast/app/overlay/ScoreboardOverlay.kt) — the static test bitmap.
-- [`StreamerHolder.kt`](app/src/main/java/com/scorecast/app/StreamerHolder.kt) — builds/owns the `SingleStreamer`.
-- [`StreamingService.kt`](app/src/main/java/com/scorecast/app/StreamingService.kt) — foreground service (camera|microphone) so the stream survives backgrounding.
-- [`MainActivity.kt`](app/src/main/java/com/scorecast/app/MainActivity.kt) — Compose UI: URL/key fields, preview, Go live / Stop, permissions.
+### Key files
 
-## Build & run
+| File | Role |
+|---|---|
+| `overlay/OverlayCompositor.kt` | EGL14 context, OES + 2D shaders, alpha-blend before encode |
+| `overlay/CameraOverlayVideoSource.kt` | 250 ms ticker; pushes new overlay bitmap each tick |
+| `overlay/ScoreboardOverlay.kt` | Canvas scoreboard bar + logo drawing; dynamic extra-fields row |
+| `StreamerHolder.kt` | SingleStreamer lifecycle, zoom, flip/rotate, recording mode |
+| `StreamingService.kt` | Android 14 foreground service (camera + microphone types) |
+| `GameState.kt` / `GameStateHolder.kt` | Single source of truth for all live scoring state |
+| `SportConfig.kt` / `SportConfigLoader.kt` | JSON sport definitions loaded from assets |
+| `ScoringPanel.kt` | Config-driven Compose UI: sport picker, score buttons, stats, players |
+| `MainActivity.kt` | Box layout: fullscreen camera + setup overlay (pre-live) / live overlay |
 
-1. Open the project in **Android Studio** (it writes `local.properties` pointing at your SDK), or
-   build from the CLI with the committed Gradle wrapper: `./gradlew assembleDebug` (set `ANDROID_HOME`
-   or add `sdk.dir=` to `local.properties` first). Gradle 8.11.1 is pinned in `gradle/wrapper`.
-2. Plug in a **real device** (the GL/camera/encoder path does not work on the emulator). Build & run.
-3. In **Facebook Live Producer** (facebook.com/live/producer) → **Go live** → select **Streaming
-   software** → **Use stream key**. The **Server URL** is `rtmps://live-api-s.facebook.com:443/rtmp/`
-   (pre-filled) and copy the **Stream key**.
-4. Paste the key in the app, tap **Go live**, grant Camera/Mic/Notifications.
-5. Watch the Facebook Live Producer preview — you should see the camera with the scoreboard bar
-   burned in, then publish the broadcast.
-   - **Secondary (YouTube):** replace the URL field with `rtmp://a.rtmp.youtube.com/live2` and use a
-     YouTube Studio stream key instead.
+### How the overlay burn-in works
 
-## Bring-up order (de-risk the pipeline first)
+StreamPack 3.x has no overlay API. The supported seam is a custom `IVideoSourceInternal`:
 
-The hardest part is the GL compositor (orientation/timestamps are device-specific and have **not**
-been verified on hardware from where this was written). Bring it up in two steps using the
-compile-time toggle in [`StreamConfig.kt`](app/src/main/java/com/scorecast/app/StreamConfig.kt):
+1. `CameraOverlayVideoSource` wraps the StreamPack `CameraSource`
+2. `OverlayCompositor` creates an EGL context with two GL programs:
+   - Program 1: draws the camera OES texture (with orientation matrix)
+   - Program 2: alpha-blends the 2D scoreboard bitmap on top
+3. Output surface feeds the StreamPack encoder — the overlay is part of every encoded frame
 
-1. **Prove the pipeline.** Set `USE_OVERLAY = false`. You should see raw camera reach Facebook Live.
-   This isolates camera → encode → RTMPS from the overlay.
-2. **Prove the burn-in.** Set `USE_OVERLAY = true`. The scoreboard should appear composited in.
+---
 
-If the live image is rotated or mirrored, use the **Mirror horizontally** / **Flip vertically**
-toggles in the app — they take effect on the next frame, even mid-stream, so you can tune
-orientation on-device without recompiling. `CAMERA_FLIP_VERTICAL` / `CAMERA_FLIP_HORIZONTAL` in
-`StreamConfig.kt` just set the boot defaults for those toggles.
+## Roadmap
 
-## Android 14 foreground service / permissions
+- **Phase 5** — Firebase Realtime Database sync + QR pairing for a remote scoring device
+- **Phase 6** — Synchronized clock anchor across paired devices
+- **Phase 7** — Sets/games scoring model (tennis, badminton, squash, table tennis)
+- **Phase 8** — In-app auto-update, YouTube stream key picker, scoreboard theme options
 
-Declared in the manifest and applied at `startForeground`:
-`INTERNET`, `CAMERA`, `RECORD_AUDIO`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_CAMERA`,
-`FOREGROUND_SERVICE_MICROPHONE`, `POST_NOTIFICATIONS`; service type `camera|microphone`.
+---
 
-## Known Phase 1 limitations (by design)
+## License
 
-- Single hard-coded camera (back). Camera switching is not in Phase 1.
-- Overlay position fixed at `BOTTOM_CENTER` (the five positions are wired in `OverlayPosition` but
-  not yet operator-selectable — that's Phase 2).
-- Recent-target storage, platform picker, and OAuth are Phase 6 / v2.
+Private / proprietary. All rights reserved.
