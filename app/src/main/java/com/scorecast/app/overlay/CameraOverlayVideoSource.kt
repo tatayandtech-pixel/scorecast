@@ -83,7 +83,13 @@ class CameraOverlayVideoSource internal constructor(
     // --- ISurfaceSourceInternal ---
 
     override suspend fun getOutput(): Surface? = outputSurface
-    override suspend fun setOutput(surface: Surface) { outputSurface = surface }
+    override suspend fun setOutput(surface: Surface) {
+        outputSurface = surface
+        // If we're already streaming, this is StreamPack replacing the encoder's input surface
+        // in place (e.g. an encoder color-format fallback) — redirect the compositor's render
+        // target only. Do NOT touch the camera capture session (see startStream() below).
+        compositor?.setOutputSurface(surface)
+    }
 
     override suspend fun resetOutput() {
         cameraSurface.resetOutput()
@@ -99,12 +105,9 @@ class CameraOverlayVideoSource internal constructor(
         camera.configure(config)
     }
 
-    override suspend fun startStream() {
-        val cfg = requireNotNull(config) { "configure() must be called before startStream()" }
-        val out = requireNotNull(outputSurface) { "setOutput() must be called before startStream()" }
-
+    private suspend fun beginCapture(cfg: VideoSourceConfig) {
         val comp = OverlayCompositor(
-            outputSurface = out,
+            outputSurface = outputSurface,
             size = cfg.resolution,
             overlayBitmap = overlayProvider(cfg.resolution),
             flipHorizontal = flipHorizontal,
@@ -128,6 +131,38 @@ class CameraOverlayVideoSource internal constructor(
                 compositor?.updateOverlay(bitmap)
             }
         }
+    }
+
+    /**
+     * Pre-opens the camera and starts its Camera2 capture session before the real encoder output
+     * surface exists (rendering to a throwaway placeholder in the meantime — see
+     * [OverlayCompositor.setOutputSurface]). Physical camera bring-up was observed taking
+     * 150ms-1.5s+ on a Legacy-tier Camera2 HAL; calling this ahead of the streamer's open()/
+     * startStream() sequence means that bring-up happens *before* the RTMP connection opens
+     * instead of after — StreamPack bundles camera-start into startStream(), which normally runs
+     * only once open() has already connected, and Facebook's ingest was observed closing the
+     * connection while waiting for video data during that camera warm-up window. No-op if the
+     * camera is already running.
+     */
+    suspend fun warmUp() {
+        if (compositor != null) return
+        val cfg = requireNotNull(config) { "configure() must be called before warmUp()" }
+        beginCapture(cfg)
+    }
+
+    override suspend fun startStream() {
+        if (compositor != null) {
+            // Already running — either warmUp() already brought the camera up, or StreamPack
+            // re-invoked startStream() as part of an internal renegotiation (observed on-device
+            // as an encoder color-format fallback that swaps the encoder's input surface). Either
+            // way the camera capture session is already live — Legacy-tier Camera2 HALs reject
+            // reconfiguring an active session's target surface, so treat this as a no-op.
+            // setOutput() already redirected the compositor's render target if a new surface
+            // arrived.
+            return
+        }
+        val cfg = requireNotNull(config) { "configure() must be called before startStream()" }
+        beginCapture(cfg)
     }
 
     override suspend fun stopStream() {

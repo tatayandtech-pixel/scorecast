@@ -17,16 +17,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,7 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
-private val PRESET_COLORS = listOf(
+internal val PRESET_COLORS = listOf(
     "#1E40AF", "#B91C1C", "#15803D", "#7C3AED",
     "#0F766E", "#B45309", "#374151", "#6B7280",
 )
@@ -100,16 +103,21 @@ fun ScoringPanel() {
         Spacer(Modifier.height(6.dp))
 
         // Team columns.
+        val isSetsGames = config.scoringModel == "setsGames"
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TeamColumn(
                 modifier = Modifier.weight(1f),
                 label = "Home",
                 teamName = state.homeTeam,
                 score = state.homeScore,
+                setsWon = if (isSetsGames) state.setsWonHome else null,
                 colorHex = state.homeColorHex,
                 scoreIncrements = config.scoreIncrements,
                 onNameChange = { GameStateHolder.update { copy(homeTeam = it) } },
-                onScoreChange = { GameStateHolder.update { copy(homeScore = (homeScore + it).coerceAtLeast(0)) } },
+                onScoreChange = {
+                    if (isSetsGames) GameStateHolder.addSetsGamesScore(true, it, config)
+                    else GameStateHolder.update { copy(homeScore = (homeScore + it).coerceAtLeast(0)) }
+                },
                 onColorChange = { GameStateHolder.update { copy(homeColorHex = it) } },
             )
             TeamColumn(
@@ -117,10 +125,14 @@ fun ScoringPanel() {
                 label = "Away",
                 teamName = state.awayTeam,
                 score = state.awayScore,
+                setsWon = if (isSetsGames) state.setsWonAway else null,
                 colorHex = state.awayColorHex,
                 scoreIncrements = config.scoreIncrements,
                 onNameChange = { GameStateHolder.update { copy(awayTeam = it) } },
-                onScoreChange = { GameStateHolder.update { copy(awayScore = (awayScore + it).coerceAtLeast(0)) } },
+                onScoreChange = {
+                    if (isSetsGames) GameStateHolder.addSetsGamesScore(false, it, config)
+                    else GameStateHolder.update { copy(awayScore = (awayScore + it).coerceAtLeast(0)) }
+                },
                 onColorChange = { GameStateHolder.update { copy(awayColorHex = it) } },
             )
         }
@@ -155,12 +167,14 @@ fun ScoringPanel() {
 
         // Clock row — hidden for sports with no clock (e.g. volleyball).
         if (state.clockDirection != "none") {
+            var showEditDialog by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Clock", style = MaterialTheme.typography.bodySmall)
                 Text(displaySeconds.toClockString(),
                     style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold,
                     modifier = Modifier.width(52.dp), textAlign = TextAlign.Center)
+                SmallButton("✎") { showEditDialog = true }
                 SmallButton(if (state.clockRunning) "Stop" else "Start") {
                     if (state.clockRunning) GameStateHolder.stopClock()
                     else GameStateHolder.startClock()
@@ -170,6 +184,17 @@ fun ScoringPanel() {
                 SmallButton("Rst") { GameStateHolder.resetClock(resetSeconds) }
             }
             Spacer(Modifier.height(6.dp))
+
+            if (showEditDialog) {
+                ClockEditDialog(
+                    initialSeconds = displaySeconds,
+                    onDismiss = { showEditDialog = false },
+                    onConfirm = { totalSeconds ->
+                        GameStateHolder.resetClock(totalSeconds)
+                        showEditDialog = false
+                    },
+                )
+            }
         }
 
         // Overlay position row.
@@ -234,6 +259,7 @@ private fun TeamColumn(
     label: String,
     teamName: String,
     score: Int,
+    setsWon: Int? = null,
     colorHex: String,
     scoreIncrements: List<Int>,
     onNameChange: (String) -> Unit,
@@ -241,7 +267,13 @@ private fun TeamColumn(
     onColorChange: (String) -> Unit,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, style = MaterialTheme.typography.labelSmall)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, style = MaterialTheme.typography.labelSmall)
+            if (setsWon != null) {
+                Text("· Sets won: $setsWon", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         OutlinedTextField(
             value = teamName,
             onValueChange = onNameChange,
@@ -389,6 +421,50 @@ private fun PlayerRoster(
         }
         SmallButton("+ Player") { onAdd() }
     }
+}
+
+/** Spec Appendix A "pencil = manual edit" affordance on the clock. */
+@Composable
+private fun ClockEditDialog(
+    initialSeconds: Float,
+    onDismiss: () -> Unit,
+    onConfirm: (Float) -> Unit,
+) {
+    val initialTotal = initialSeconds.toInt()
+    var minutes by remember { mutableStateOf((initialTotal / 60).toString()) }
+    var seconds by remember { mutableStateOf((initialTotal % 60).toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit clock") },
+        text = {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = minutes,
+                    onValueChange = { if (it.all(Char::isDigit) && it.length <= 3) minutes = it },
+                    label = { Text("min") },
+                    singleLine = true,
+                    modifier = Modifier.width(80.dp),
+                )
+                Text(":", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(
+                    value = seconds,
+                    onValueChange = { if (it.all(Char::isDigit) && it.length <= 2) seconds = it },
+                    label = { Text("sec") },
+                    singleLine = true,
+                    modifier = Modifier.width(80.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val total = (minutes.toIntOrNull() ?: 0) * 60 + (seconds.toIntOrNull() ?: 0).coerceIn(0, 59)
+                onConfirm(total.toFloat())
+            }) { Text("Set") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

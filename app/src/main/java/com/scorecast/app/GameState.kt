@@ -7,6 +7,10 @@ data class GameState(
     val awayTeam: String = "AWAY",
     val homeScore: Int = 0,
     val awayScore: Int = 0,
+    // setsGames sports (spec §6): homeScore/awayScore hold the CURRENT set's points, reset to 0
+    // when a set is won; setsWonHome/Away tally sets banked so far this match.
+    val setsWonHome: Int = 0,
+    val setsWonAway: Int = 0,
     val homeColorHex: String = "#1E40AF",
     val awayColorHex: String = "#B91C1C",
     val period: Int = 1,

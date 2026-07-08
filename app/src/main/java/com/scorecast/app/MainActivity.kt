@@ -1,6 +1,8 @@
 package com.scorecast.app
 
 import android.Manifest
+import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
 import android.view.ScaleGestureDetector
@@ -13,6 +15,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +46,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -65,22 +71,95 @@ class MainActivity : ComponentActivity() {
         SportConfigLoader.loadAll(this)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                StreamScreen()
+                AppRoot()
             }
         }
     }
 }
 
+/** Navigation skeleton (spec Appendix B/A): portrait setup screens, landscape in-game screen. */
+private enum class Screen {
+    HOME, MATCHES, WIZARD_SPORT, WIZARD_TEAMS, WIZARD_PLATFORM, WIZARD_DESTINATION, IN_GAME
+}
+
 @Composable
-private fun StreamScreen() {
+private fun AppRoot() {
+    var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
+    var pendingTarget by remember { mutableStateOf(StreamTarget()) }
+    val activity = LocalContext.current as? Activity
+
+    // Setup flow (Home, Matches, the wizard) is portrait; the in-game screen is landscape (spec
+    // Appendix B "Orientation"). configChanges in the manifest keeps the Activity (and camera/
+    // StreamerHolder state) alive across this switch instead of recreating it.
+    LaunchedEffect(screen) {
+        activity?.requestedOrientation = when (screen) {
+            Screen.IN_GAME -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
+
+    when (screen) {
+        Screen.HOME -> HomeScreen(
+            onCreateStream = { screen = Screen.MATCHES },
+            onJoinAsRemote = { /* QR-paired mirror — Phase 5 */ },
+        )
+        Screen.MATCHES -> MatchesScreen(
+            onBack = { screen = Screen.HOME },
+            onNewMatch = {
+                pendingTarget = StreamTarget()
+                screen = Screen.WIZARD_SPORT
+            },
+            onRematch = { record ->
+                GameStateHolder.update {
+                    copy(
+                        sport = record.sport,
+                        homeTeam = record.homeTeam,
+                        awayTeam = record.awayTeam,
+                        homeColorHex = record.homeColorHex,
+                        awayColorHex = record.awayColorHex,
+                    )
+                }
+                pendingTarget = StreamTarget()
+                screen = Screen.WIZARD_SPORT
+            },
+        )
+        Screen.WIZARD_SPORT -> WizardSportScreen(
+            onBack = { screen = Screen.MATCHES },
+            onNext = { screen = Screen.WIZARD_TEAMS },
+        )
+        Screen.WIZARD_TEAMS -> WizardTeamsScreen(
+            onBack = { screen = Screen.WIZARD_SPORT },
+            onNext = { screen = Screen.WIZARD_PLATFORM },
+        )
+        Screen.WIZARD_PLATFORM -> WizardPlatformScreen(
+            target = pendingTarget,
+            onTargetChange = { pendingTarget = it },
+            onBack = { screen = Screen.WIZARD_TEAMS },
+            onNext = { screen = Screen.WIZARD_DESTINATION },
+        )
+        Screen.WIZARD_DESTINATION -> WizardDestinationScreen(
+            target = pendingTarget,
+            onTargetChange = { pendingTarget = it },
+            onBack = { screen = Screen.WIZARD_PLATFORM },
+            onFinish = { screen = Screen.IN_GAME },
+        )
+        Screen.IN_GAME -> StreamScreen(
+            onExit = { screen = Screen.MATCHES },
+            initialTarget = pendingTarget,
+        )
+    }
+}
+
+@Composable
+private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = StreamTarget()) {
     val context = LocalContext.current
     val streamerState by StreamerHolder.state.collectAsState()
     val flip        by StreamerHolder.flip.collectAsState()
     val zoom        by StreamerHolder.zoomRatio.collectAsState()
 
-    var ingestUrl     by rememberSaveable { mutableStateOf(StreamConfig.DEFAULT_INGEST_URL) }
-    var streamKey     by rememberSaveable { mutableStateOf("") }
-    var recordingMode by rememberSaveable { mutableStateOf(RecordingMode.STREAM_ONLY) }
+    var ingestUrl     by rememberSaveable { mutableStateOf(initialTarget.ingestUrl) }
+    var streamKey     by rememberSaveable { mutableStateOf(initialTarget.streamKey) }
+    var recordingMode by rememberSaveable { mutableStateOf(initialTarget.mode) }
     var showScorePanel by rememberSaveable { mutableStateOf(true) }
     var startRequested by remember { mutableStateOf(false) }
 
@@ -159,6 +238,7 @@ private fun StreamScreen() {
                 onStreamKeyChange     = { streamKey = it },
                 onRecordingModeChange = { recordingMode = it },
                 onGoLive = onGoLive,
+                onExit = onExit,
             )
         } else {
             // ── LIVE mode: fullscreen camera + floating controls ──────────────
@@ -166,7 +246,14 @@ private fun StreamScreen() {
                 showScorePanel     = showScorePanel,
                 onToggleScorePanel = { showScorePanel = !showScorePanel },
                 streamerState      = streamerState,
-                onStop             = { StreamingService.stop(context) },
+                onStop             = {
+                    StreamingService.stop(context)
+                    // Spec Appendix A "End match": save the session to local history. The full
+                    // confirm-then-stop flow is separate follow-up work — this just captures the
+                    // record so the Matches screen has something real to show and rematch from.
+                    MatchHistoryStore.save(context, MatchRecord.from(GameStateHolder.state.value))
+                    onExit()
+                },
             )
         }
     }
@@ -187,13 +274,19 @@ private fun SetupPanel(
     onStreamKeyChange: (String) -> Unit,
     onRecordingModeChange: (RecordingMode) -> Unit,
     onGoLive: () -> Unit,
+    onExit: () -> Unit,
 ) {
     val isLive = streamerState is StreamerHolder.State.Live || streamerState is StreamerHolder.State.Starting
     var selectedTab by remember { mutableIntStateOf(0) }
 
     Column(modifier = modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Text("ScoreCast", style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()) {
+            Text("ScoreCast", style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 4.dp))
+            TextButton(onClick = onExit) { Text("← Matches", fontSize = 12.sp) }
+        }
 
         TabRow(selectedTabIndex = selectedTab) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 },
@@ -251,22 +344,16 @@ private fun LiveOverlay(
     streamerState: StreamerHolder.State,
     onStop: () -> Unit,
 ) {
+    val context = LocalContext.current
     var showPairDialog by remember { mutableStateOf(false) }
+    var showEndMatchConfirm by remember { mutableStateOf(false) }
+    var showMenuStub by remember { mutableStateOf(false) }
+    var micMuted by remember { mutableStateOf(false) }
     val isStarting = streamerState is StreamerHolder.State.Starting
+    val isRecording = remember(streamerState) { StreamerHolder.currentRecordingFile != null }
+    val batteryPct = rememberBatteryPercent()
 
     Box(Modifier.fillMaxSize()) {
-        // Status badge (top-left)
-        Text(
-            text = if (isStarting) "● Starting…" else "● LIVE",
-            color = if (isStarting) Color.Yellow else Color.Red,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(12.dp)
-                .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
-                .padding(horizontal = 8.dp, vertical = 3.dp),
-        )
-
         // Sliding scoring panel (right edge)
         AnimatedVisibility(
             visible = showScorePanel,
@@ -282,29 +369,74 @@ private fun LiveOverlay(
                     .padding(horizontal = 10.dp, vertical = 8.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Scoring", style = MaterialTheme.typography.titleSmall)
-                    OutlinedButton(
-                        onClick = { showPairDialog = true },
-                        modifier = Modifier.height(28.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                        shape = RoundedCornerShape(4.dp),
-                    ) { Text("🔗 Pair device", fontSize = 11.sp) }
-                }
+                // Clears the top bar (health/recording chips, remote-scoring toggle, mic/share/
+                // overflow) drawn on top of this panel — see below. The panel's own pairing
+                // entry point was removed: the top bar's remote-scoring toggle covers it now.
+                Spacer(Modifier.height(40.dp))
+                Text("Scoring", style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(4.dp))
                 ScoringPanel()
             }
         }
 
-        // Floating action row (bottom-right)
+        // Top bar (spec Appendix A): health chip + recording indicator on the left,
+        // remote-scoring/scorer-status stub, mic toggle, share, and overflow on the right.
+        // Declared after the sliding panel so its icons stay on top and clickable while the
+        // panel is open, instead of being covered by it.
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Chip(
+                    text = if (isStarting) "● Starting…" else "● LIVE",
+                    color = if (isStarting) Color.Yellow else Color.Red,
+                )
+                Chip(
+                    text = if (isRecording) "● Recording" else "○ Not being stored",
+                    color = if (isRecording) Color.Red else Color.Gray,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                // Remote-scoring toggle + scorer-connection dot — stub until Phase 5 (Firebase sync).
+                Switch(checked = false, onCheckedChange = { showPairDialog = true },
+                    modifier = Modifier.height(20.dp))
+                Chip(text = "● scorer offline", color = Color.Gray)
+                TopBarIconButton(if (micMuted) "🔇" else "🎤") {
+                    micMuted = !micMuted
+                    (context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager)
+                        ?.isMicrophoneMute = micMuted
+                }
+                TopBarIconButton("📤") {
+                    context.startActivity(
+                        android.content.Intent.createChooser(
+                            android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(
+                                    android.content.Intent.EXTRA_TEXT,
+                                    "Live now on ScoreCast: ${GameStateHolder.state.value.homeTeam} vs " +
+                                        "${GameStateHolder.state.value.awayTeam}",
+                                )
+                            },
+                            "Share",
+                        )
+                    )
+                }
+                TopBarIconButton("⋮") { showMenuStub = true }
+            }
+        }
+
+        // Floating action row (bottom-right) — spec Appendix A bottom bar (battery + end match).
         Row(
             modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            Text("🔋 $batteryPct%", style = MaterialTheme.typography.labelMedium)
             OutlinedButton(
                 onClick = onToggleScorePanel,
                 shape = RoundedCornerShape(6.dp),
@@ -312,10 +444,10 @@ private fun LiveOverlay(
                 Text(if (showScorePanel) "Hide panel" else "📊 Score", fontSize = 12.sp)
             }
             Button(
-                onClick = onStop,
+                onClick = { showEndMatchConfirm = true },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 shape = RoundedCornerShape(6.dp),
-            ) { Text("⏹ Stop") }
+            ) { Text("⏹ End match") }
         }
     }
 
@@ -336,6 +468,76 @@ private fun LiveOverlay(
             },
         )
     }
+
+    if (showMenuStub) {
+        AlertDialog(
+            onDismissRequest = { showMenuStub = false },
+            title = { Text("Settings") },
+            text = { Text("Settings screen isn't built yet — coming in a later phase.") },
+            confirmButton = { TextButton(onClick = { showMenuStub = false }) { Text("OK") } },
+        )
+    }
+
+    if (showEndMatchConfirm) {
+        AlertDialog(
+            onDismissRequest = { showEndMatchConfirm = false },
+            title = { Text("End this match?") },
+            text = { Text("This stops the stream/recording and saves the result to Matches.") },
+            confirmButton = {
+                TextButton(onClick = { showEndMatchConfirm = false; onStop() }) { Text("End match") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEndMatchConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun Chip(text: String, color: Color) {
+    Text(
+        text = text,
+        color = color,
+        style = MaterialTheme.typography.labelLarge,
+        modifier = Modifier
+            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
+}
+
+@Composable
+private fun TopBarIconButton(label: String, onClick: () -> Unit) {
+    // Fixed-size Box instead of sizing off the glyph's own intrinsic bounds — some glyphs (e.g.
+    // "⋮") measure far narrower than they look, which was shrinking the real tap target down to
+    // a sliver despite the visible background looking full-size.
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = label, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+/** Battery percentage, refreshed via the sticky ACTION_BATTERY_CHANGED broadcast. */
+@Composable
+private fun rememberBatteryPercent(): Int {
+    val context = LocalContext.current
+    var percent by remember { mutableIntStateOf(100) }
+    DisposableEffect(Unit) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: android.content.Context?, intent: android.content.Intent?) {
+                val level = intent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val scale = intent?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+                if (level >= 0 && scale > 0) percent = (level * 100) / scale
+            }
+        }
+        context.registerReceiver(receiver, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    return percent
 }
 
 // ── Shared control composables ───────────────────────────────────────────────

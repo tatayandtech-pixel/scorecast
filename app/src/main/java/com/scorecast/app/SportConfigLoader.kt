@@ -56,6 +56,7 @@ object SportConfigLoader {
             extraFields = extraFields,
             bestOf = if (o.has("bestOf") && !o.isNull("bestOf")) o.getInt("bestOf") else null,
             pointsToWinGame = if (o.has("pointsToWinGame") && !o.isNull("pointsToWinGame")) o.getInt("pointsToWinGame") else null,
+            finalSetPoints = if (o.has("finalSetPoints") && !o.isNull("finalSetPoints")) o.getInt("finalSetPoints") else null,
             winByTwo = o.optBoolean("winByTwo", false),
             pointCap = if (o.has("pointCap") && !o.isNull("pointCap")) o.getInt("pointCap") else null,
         )

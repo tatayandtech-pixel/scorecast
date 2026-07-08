@@ -1,11 +1,16 @@
 {
   "sport": "volleyball",
   "displayName": "Volleyball",
-  "scoringModel": "flat",
+  "scoringModel": "setsGames",
   "usesPlayers": false,
   "periods": 5,
   "periodLabel": "Set",
   "periodLength": 0,
+  "bestOf": 5,
+  "pointsToWinGame": 25,
+  "finalSetPoints": 15,
+  "winByTwo": true,
+  "pointCap": null,
   "clockDirection": "none",
   "scoreIncrements": [1],
   "extraFields": []

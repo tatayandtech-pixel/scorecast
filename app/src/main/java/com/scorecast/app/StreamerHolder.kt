@@ -106,6 +106,14 @@ object StreamerHolder {
             applyPreview()
             applyFlip()
 
+            // Warm up the camera before opening the network connection: on this hardware, camera
+            // bring-up can take 150ms-1.5s+, and StreamPack only starts the camera as part of
+            // startStream() — which normally runs after open() already connected. Facebook's
+            // ingest was observed closing the connection while waiting for video data during that
+            // gap. Warming up first means real frames are already flowing by the time open()
+            // connects and startStream() attaches the encoder.
+            source()?.warmUp()
+
             scope.launch { s.throwableFlow.collect { t -> if (t != null) fail(t) } }
 
             val descriptor = when (mode) {

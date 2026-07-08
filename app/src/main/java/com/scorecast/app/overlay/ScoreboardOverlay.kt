@@ -49,13 +49,14 @@ object ScoreboardOverlay {
 
         canvas.save()
         canvas.translate(barLeft, barTop)
-        drawBar(canvas, state, perTeamFields, barW, barH)
+        drawBar(canvas, state, config, perTeamFields, barW, barH)
         canvas.restore()
     }
 
     private fun drawBar(
         canvas: Canvas,
         state: GameState,
+        config: SportConfig?,
         perTeamFields: List<com.scorecast.app.ExtraFieldConfig>,
         barW: Int,
         barH: Int,
@@ -97,11 +98,14 @@ object ScoreboardOverlay {
         val infoY   = barH * if (hasExtras) 0.80f else 0.90f
         val extrasY = barH * 0.95f
 
-        // Names row.
+        // Names row. setsGames sports (spec §6/§7) append banked sets won, e.g. "LIONS (2)".
+        val isSetsGames = config?.scoringModel == "setsGames"
+        val homeName = if (isSetsGames) "${state.homeTeam} (${state.setsWonHome})" else state.homeTeam
+        val awayName = if (isSetsGames) "${state.awayTeam} (${state.setsWonAway})" else state.awayTeam
         whiteBold.textSize = nameSize; whiteBold.textAlign = Paint.Align.LEFT
-        canvas.drawText(state.homeTeam, pad, nameY, whiteBold)
+        canvas.drawText(homeName, pad, nameY, whiteBold)
         whiteBold.textAlign = Paint.Align.RIGHT
-        canvas.drawText(state.awayTeam, barW - pad, nameY, whiteBold)
+        canvas.drawText(awayName, barW - pad, nameY, whiteBold)
 
         // Scores row.
         whiteBold.textSize = scoreSize; whiteBold.textAlign = Paint.Align.RIGHT

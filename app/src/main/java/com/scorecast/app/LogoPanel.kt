@@ -30,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+private const val MAX_LOGOS = 6
+
 @Composable
 fun LogoPanel() {
     val context = LocalContext.current
@@ -46,10 +48,18 @@ fun LogoPanel() {
             Text("Logos", style = MaterialTheme.typography.titleSmall)
             OutlinedButton(
                 onClick = { picker.launch("image/*") },
+                enabled = logos.size < MAX_LOGOS,
                 modifier = Modifier.height(28.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                 shape = RoundedCornerShape(4.dp),
             ) { Text("+ Add", fontSize = 11.sp) }
+        }
+
+        if (logos.size >= MAX_LOGOS) {
+            Text("Maximum of $MAX_LOGOS logos (spec Appendix B6)",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp))
         }
 
         if (logos.isEmpty()) {

@@ -41,7 +41,7 @@ import java.nio.FloatBuffer
  * tune via [StreamConfig.CAMERA_FLIP_VERTICAL]/[StreamConfig.CAMERA_FLIP_HORIZONTAL]. See README.
  */
 class OverlayCompositor(
-    private val outputSurface: Surface,
+    private var outputSurface: Surface?,
     private val size: Size,
     private val overlayBitmap: Bitmap?,
     flipHorizontal: Boolean = StreamConfig.CAMERA_FLIP_HORIZONTAL,
@@ -56,6 +56,10 @@ class OverlayCompositor(
     private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
     private var eglConfig: EGLConfig? = null
     private var outputEglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
+    // True while outputEglSurface is a throwaway 1x1 PBuffer rather than the real encoder Surface —
+    // lets the camera/GL pipeline warm up (and keep draining SurfaceTexture frames) before the real
+    // output Surface exists, without presenting anything anywhere.
+    private var usingPlaceholderOutput = false
     private var previewEglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
     private var previewWidth = 0
     private var previewHeight = 0
@@ -103,6 +107,26 @@ class OverlayCompositor(
             initPrograms()
             initCameraInput()
             initOverlay()
+        }
+    }
+
+    /**
+     * Redirects the encoder output to a new Surface without touching the camera input or capture
+     * session. StreamPack can replace the encoder's input surface after the fact (e.g. falling back
+     * to a color format the hardware encoder actually supports) — when that happens we must follow
+     * the new surface here rather than re-touch the camera, since some HALs (Legacy-tier Camera2 in
+     * particular) reject reconfiguring an already-active capture session's target surface.
+     */
+    fun setOutputSurface(surface: Surface) {
+        handler.post {
+            if (released) return@post
+            if (outputEglSurface != EGL14.EGL_NO_SURFACE) {
+                EGL14.eglDestroySurface(eglDisplay, outputEglSurface)
+                outputEglSurface = EGL14.EGL_NO_SURFACE
+            }
+            outputSurface = surface
+            usingPlaceholderOutput = false
+            ensureOutputEglSurface()
         }
     }
 
@@ -180,14 +204,19 @@ class OverlayCompositor(
         try {
             // 1) Encoder/processor output — carries the camera frame timestamp.
             //    Make the context current BEFORE updateTexImage (it binds to the current context).
+            //    updateTexImage() must run every frame regardless of placeholder state, or the
+            //    camera's SurfaceTexture buffer queue fills up and stalls the capture session —
+            //    this is what lets the camera warm up before the real encoder surface exists.
             makeCurrent(outputEglSurface)
             cameraSurfaceTexture.updateTexImage()
             cameraSurfaceTexture.getTransformMatrix(texMatrix)
-            renderComposite(size.width, size.height)
-            EGLExt.eglPresentationTimeANDROID(
-                eglDisplay, outputEglSurface, cameraSurfaceTexture.timestamp
-            )
-            EGL14.eglSwapBuffers(eglDisplay, outputEglSurface)
+            if (!usingPlaceholderOutput) {
+                renderComposite(size.width, size.height)
+                EGLExt.eglPresentationTimeANDROID(
+                    eglDisplay, outputEglSurface, cameraSurfaceTexture.timestamp
+                )
+                EGL14.eglSwapBuffers(eglDisplay, outputEglSurface)
+            }
 
             // 2) Operator preview (best-effort, not encoded) — fill the preview window.
             if (previewEglSurface != EGL14.EGL_NO_SURFACE && previewWidth > 0 && previewHeight > 0) {
@@ -243,6 +272,10 @@ class OverlayCompositor(
             EGL14.EGL_BLUE_SIZE, 8,
             EGL14.EGL_ALPHA_SIZE, 8,
             EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+            // Must support PBuffer, not just Window: warm-up uses a throwaway PBuffer surface
+            // before the real encoder Surface exists (EGL defaults to EGL_WINDOW_BIT only if
+            // EGL_SURFACE_TYPE isn't listed explicitly).
+            EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT or EGL14.EGL_PBUFFER_BIT,
             EGLExt.EGL_RECORDABLE_ANDROID, 1,
             EGL14.EGL_NONE
         )
@@ -261,9 +294,22 @@ class OverlayCompositor(
 
     private fun ensureOutputEglSurface(): EGLSurface {
         if (outputEglSurface == EGL14.EGL_NO_SURFACE) {
-            outputEglSurface = EGL14.eglCreateWindowSurface(
-                eglDisplay, eglConfig, outputSurface, intArrayOf(EGL14.EGL_NONE), 0
-            )
+            val surface = outputSurface
+            outputEglSurface = if (surface != null) {
+                usingPlaceholderOutput = false
+                EGL14.eglCreateWindowSurface(
+                    eglDisplay, eglConfig, surface, intArrayOf(EGL14.EGL_NONE), 0
+                )
+            } else {
+                // No real encoder surface yet (camera warm-up path) — a throwaway 1x1 PBuffer
+                // lets EGL/GL and the camera's SurfaceTexture stand up and start draining frames
+                // now; drawFrame() skips presenting until setOutputSurface() swaps in the real one.
+                usingPlaceholderOutput = true
+                EGL14.eglCreatePbufferSurface(
+                    eglDisplay, eglConfig,
+                    intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0
+                )
+            }
         }
         return outputEglSurface
     }

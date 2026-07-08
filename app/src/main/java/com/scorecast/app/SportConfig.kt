@@ -20,6 +20,7 @@ data class SportConfig(
     val extraFields: List<ExtraFieldConfig> = emptyList(),
     val bestOf: Int? = null,
     val pointsToWinGame: Int? = null,
+    val finalSetPoints: Int? = null,
     val winByTwo: Boolean = false,
     val pointCap: Int? = null,
 )

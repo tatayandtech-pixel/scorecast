@@ -47,9 +47,45 @@ object GameStateHolder {
             startedAtMs = 0L,
             baseRemainingSeconds = initBase,
             extraFields = emptyMap(),
+            homeScore = 0,
+            awayScore = 0,
+            setsWonHome = 0,
+            setsWonAway = 0,
             playersHome = if (config.usesPlayers) List(2) { "" } else emptyList(),
             playersAway = if (config.usesPlayers) List(2) { "" } else emptyList(),
         )
+    }
+
+    /**
+     * Rally-point scoring for `setsGames` sports (spec §6) — e.g. volleyball to 25, win-by-two,
+     * with a lower target on the deciding (final) set. A point that wins the set banks it and
+     * resets both teams' points to 0 for the next set; the "Period" field doubles as the set
+     * number, so the existing Period stepper UI needs no changes.
+     */
+    fun addSetsGamesScore(isHome: Boolean, delta: Int, config: SportConfig) = update {
+        val newHomeScore = (if (isHome) homeScore + delta else homeScore).coerceAtLeast(0)
+        val newAwayScore = (if (!isHome) awayScore + delta else awayScore).coerceAtLeast(0)
+
+        val isDecidingSet = period >= (config.bestOf ?: Int.MAX_VALUE)
+        val target = (if (isDecidingSet) config.finalSetPoints else null)
+            ?: config.pointsToWinGame ?: 25
+        val leader = maxOf(newHomeScore, newAwayScore)
+        val diff = kotlin.math.abs(newHomeScore - newAwayScore)
+        val hardCapped = config.pointCap != null && leader >= config.pointCap
+        val setWon = delta > 0 && leader >= target && (!config.winByTwo || diff >= 2 || hardCapped)
+
+        if (setWon) {
+            val homeWonSet = newHomeScore > newAwayScore
+            copy(
+                homeScore = 0,
+                awayScore = 0,
+                setsWonHome = setsWonHome + if (homeWonSet) 1 else 0,
+                setsWonAway = setsWonAway + if (!homeWonSet) 1 else 0,
+                period = (period + 1).coerceAtMost(config.periods),
+            )
+        } else {
+            copy(homeScore = newHomeScore, awayScore = newAwayScore)
+        }
     }
 
     // Extra field updates. perTeam fields use compound keys: "${key}_home" / "${key}_away".
