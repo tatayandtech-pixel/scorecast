@@ -142,6 +142,8 @@ function setConnectionState(state) {
     : "● Connecting…";
 }
 
+let lastRenderedSportKey = null;
+
 function renderSession(data) {
   if (!data) {
     // The session node itself was deleted (main device ended the match) rather than just our
@@ -167,13 +169,23 @@ function renderSession(data) {
     el("away-sets").textContent = (data.setsWon && data.setsWon.away) ?? 0;
   }
 
-  renderScoreControls(sport, isSetsGames);
+  el("home-minus").disabled = isSetsGames || (data.homeScore ?? 0) <= 0;
+  el("away-minus").disabled = isSetsGames || (data.awayScore ?? 0) <= 0;
+
+  // Rebuild the +N buttons only when the sport (and therefore its increments) actually
+  // changes — NOT on every score update. Every write we make immediately echoes back through
+  // our own onValue listener, so rebuilding on every render meant the tapped button's DOM node
+  // was destroyed and replaced mid-tap. On iOS Safari this can re-target the in-flight click at
+  // whatever new element ends up under the same screen coordinates, firing bumpScore again,
+  // which writes again, which rebuilds again — a self-sustaining loop with no further taps
+  // needed (this was the "score climbs on its own, can't stop it" bug).
+  if (data.sport !== lastRenderedSportKey) {
+    lastRenderedSportKey = data.sport;
+    renderScoreButtons(sport, isSetsGames);
+  }
 }
 
-function renderScoreControls(sport, disabled) {
-  el("home-minus").disabled = disabled || (latestSessionData?.homeScore ?? 0) <= 0;
-  el("away-minus").disabled = disabled || (latestSessionData?.awayScore ?? 0) <= 0;
-
+function renderScoreButtons(sport, disabled) {
   const homeIncrements = el("home-increments");
   const awayIncrements = el("away-increments");
   homeIncrements.innerHTML = "";
