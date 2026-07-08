@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -497,35 +498,37 @@ private fun LiveOverlay(
             onDismissRequest = { showPairDialog = false },
             title = { Text("Pair a Scoring Device") },
             text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // Row, not Column: this dialog only ever shows on the landscape in-game screen,
+                // which is short on height but has plenty of width — a vertically-stacked layout
+                // pushed the code/copy button below the visible dialog bounds.
+                Row(
+                    modifier = Modifier
+                        .heightIn(max = 260.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
                     Image(
                         bitmap = qrBitmap,
                         contentDescription = "Pairing QR code",
-                        modifier = Modifier.size(200.dp),
+                        modifier = Modifier.size(130.dp),
                     )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "On an Android device, tap \"Join as remote scorer\" on the Home screen " +
-                            "and scan this code.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "On an iPhone or a laptop, open the ScoreCast web mirror instead and " +
-                            "enter this code:",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        pairingCode,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    TextButton(onClick = {
-                        clipboard.setText(AnnotatedString(pairingCode))
-                        copied = true
-                    }) { Text(if (copied) "Copied!" else "Copy code") }
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            "Android: scan this code. iPhone/laptop: use the web mirror with the code below.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            pairingCode,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        TextButton(onClick = {
+                            clipboard.setText(AnnotatedString(pairingCode))
+                            copied = true
+                        }) { Text(if (copied) "Copied!" else "Copy code") }
+                    }
                 }
             },
             confirmButton = {
