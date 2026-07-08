@@ -53,6 +53,6 @@ object SessionHolder {
 
     fun clear() {
         _session.value = null
-        FirebaseSessionSync.stop()
+        FirebaseSessionSync.stop(deleteSession = true)
     }
 }

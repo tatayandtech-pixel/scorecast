@@ -140,7 +140,15 @@ object FirebaseSessionSync {
         }
     }
 
-    fun stop() {
+    /**
+     * Tears down local listeners. [deleteSession] additionally deletes the session node itself —
+     * only meaningful (and only takes effect) for the main device, since it owns the session's
+     * lifetime; a mirror leaving must never delete a session still live for the main device.
+     */
+    fun stop(deleteSession: Boolean = false) {
+        if (deleteSession && role == Role.MAIN) {
+            sessionRef?.removeValue()
+        }
         pushJob?.cancel()
         pushJob = null
         valueListener?.let { l -> sessionRef?.removeEventListener(l) }

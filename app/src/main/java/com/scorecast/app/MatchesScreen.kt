@@ -51,15 +51,6 @@ fun MatchesScreen(
         Text("Matches", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(12.dp))
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                "Remote scoring from a second device — coming in Phase 5.",
-                modifier = Modifier.padding(12.dp),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        Spacer(Modifier.height(16.dp))
-
         Button(onClick = onNewMatch, modifier = Modifier.fillMaxWidth()) {
             Text("+ Stream new match")
         }

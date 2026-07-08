@@ -8,7 +8,7 @@
           ".read": "auth != null"
         },
 
-        ".write": "auth != null && ((!data.exists() && newData.child('joinToken').exists() && newData.child('members').child(auth.uid).val() == newData.child('joinToken').val()) || (data.exists() && data.child('members').child(auth.uid).exists() && newData.child('joinToken').val() == data.child('joinToken').val()) || (data.exists() && !data.child('members').child(auth.uid).exists() && newData.child('members').child(auth.uid).val() == data.child('joinToken').val() && newData.child('joinToken').val() == data.child('joinToken').val()))"
+        ".write": "auth != null && ((!data.exists() && newData.child('joinToken').exists() && newData.child('members').child(auth.uid).val() == newData.child('joinToken').val()) || (data.exists() && data.child('members').child(auth.uid).exists() && (!newData.exists() || newData.child('joinToken').val() == data.child('joinToken').val())) || (data.exists() && !data.child('members').child(auth.uid).exists() && newData.child('members').child(auth.uid).val() == data.child('joinToken').val() && newData.child('joinToken').val() == data.child('joinToken').val()))"
       }
     }
   }
