@@ -18,7 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -36,7 +35,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -46,14 +44,6 @@ import kotlinx.coroutines.delay
 internal val PRESET_COLORS = listOf(
     "#1E40AF", "#B91C1C", "#15803D", "#7C3AED",
     "#0F766E", "#B45309", "#374151", "#6B7280",
-)
-
-private val POSITION_LABELS = mapOf(
-    OverlayPosition.TOP_LEFT to "TL",
-    OverlayPosition.TOP_RIGHT to "TR",
-    OverlayPosition.BOTTOM_LEFT to "BL",
-    OverlayPosition.BOTTOM_CENTER to "BC",
-    OverlayPosition.BOTTOM_RIGHT to "BR",
 )
 
 private val FALLBACK_CONFIG = SportConfig(
@@ -68,10 +58,8 @@ private val FALLBACK_CONFIG = SportConfig(
 
 @Composable
 fun ScoringPanel() {
-    val context = LocalContext.current
     val state by GameStateHolder.state.collectAsState()
 
-    val allConfigs = remember { SportConfigLoader.loadAll(context) }
     val config = remember(state.sport) {
         SportConfigLoader.getCached(state.sport) ?: FALLBACK_CONFIG
     }
@@ -96,11 +84,6 @@ fun ScoringPanel() {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text("Scoring", style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.padding(bottom = 4.dp))
-
-        // Sport picker.
-        SportPickerRow(allConfigs, state.sport)
-
-        Spacer(Modifier.height(6.dp))
 
         // Team columns.
         val isSetsGames = config.scoringModel == "setsGames"
@@ -136,12 +119,6 @@ fun ScoringPanel() {
                 onColorChange = { GameStateHolder.update { copy(awayColorHex = it) } },
             )
         }
-
-        // Extra fields (fouls, cards, etc.).
-        ExtraFieldsSection(state, config)
-
-        // Player roster (only for sports that use individual player tracking).
-        PlayersSection(state)
 
         Spacer(Modifier.height(6.dp))
 
@@ -194,60 +171,6 @@ fun ScoringPanel() {
                         showEditDialog = false
                     },
                 )
-            }
-        }
-
-        // Overlay position row.
-        Row(verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Position", style = MaterialTheme.typography.bodySmall)
-            OverlayPosition.entries.forEach { pos ->
-                val selected = state.overlayPosition == pos
-                OutlinedButton(
-                    onClick = { GameStateHolder.update { copy(overlayPosition = pos) } },
-                    modifier = Modifier.height(28.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                    colors = if (selected) ButtonDefaults.outlinedButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                    ) else ButtonDefaults.outlinedButtonColors(),
-                ) {
-                    Text(POSITION_LABELS[pos] ?: "", fontSize = 10.sp)
-                }
-            }
-        }
-
-        Spacer(Modifier.height(6.dp))
-
-        // Custom text banner.
-        OutlinedTextField(
-            value = state.customText,
-            onValueChange = { GameStateHolder.update { copy(customText = it) } },
-            label = { Text("Banner text") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-@Composable
-private fun SportPickerRow(allConfigs: List<SportConfig>, currentSport: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Sport", style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(end = 4.dp))
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            allConfigs.forEach { cfg ->
-                val selected = cfg.sport == currentSport
-                OutlinedButton(
-                    onClick = { GameStateHolder.selectSport(cfg) },
-                    modifier = Modifier.height(28.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    colors = if (selected) ButtonDefaults.outlinedButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                    ) else ButtonDefaults.outlinedButtonColors(),
-                ) { Text(cfg.displayName, fontSize = 11.sp) }
             }
         }
     }
@@ -311,115 +234,6 @@ private fun TeamColumn(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun ExtraFieldsSection(state: GameState, config: SportConfig) {
-    if (config.extraFields.isEmpty()) return
-
-    Spacer(Modifier.height(4.dp))
-    Text("Stats", style = MaterialTheme.typography.bodySmall)
-
-    config.extraFields.filter { it.perTeam }.forEach { field ->
-        val homeVal = state.extraFields["${field.key}_home"] ?: 0
-        val awayVal = state.extraFields["${field.key}_away"] ?: 0
-        Row(verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(field.label, style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.width(64.dp))
-            Text("H:", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(16.dp))
-            SmallButton("-") {
-                GameStateHolder.setExtraFieldTeam(field.key, true, (homeVal - 1).coerceAtLeast(0))
-            }
-            Text(homeVal.toString(), style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.width(22.dp), textAlign = TextAlign.Center)
-            SmallButton("+") {
-                val v = if (field.max != null) (homeVal + 1).coerceAtMost(field.max) else homeVal + 1
-                GameStateHolder.setExtraFieldTeam(field.key, true, v)
-            }
-            Spacer(Modifier.width(6.dp))
-            Text("A:", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(16.dp))
-            SmallButton("-") {
-                GameStateHolder.setExtraFieldTeam(field.key, false, (awayVal - 1).coerceAtLeast(0))
-            }
-            Text(awayVal.toString(), style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.width(22.dp), textAlign = TextAlign.Center)
-            SmallButton("+") {
-                val v = if (field.max != null) (awayVal + 1).coerceAtMost(field.max) else awayVal + 1
-                GameStateHolder.setExtraFieldTeam(field.key, false, v)
-            }
-        }
-    }
-
-    config.extraFields.filter { !it.perTeam }.forEach { field ->
-        val v = state.extraFields[field.key] ?: 0
-        Row(verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(field.label, style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.width(64.dp))
-            SmallButton("-") { GameStateHolder.setExtraField(field.key, (v - 1).coerceAtLeast(0)) }
-            Text(v.toString(), style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.width(22.dp), textAlign = TextAlign.Center)
-            SmallButton("+") {
-                val nv = if (field.max != null) (v + 1).coerceAtMost(field.max) else v + 1
-                GameStateHolder.setExtraField(field.key, nv)
-            }
-        }
-    }
-}
-
-@Composable
-private fun PlayersSection(state: GameState) {
-    if (state.playersHome.isEmpty() && state.playersAway.isEmpty()) return
-
-    Spacer(Modifier.height(4.dp))
-    Text("Players", style = MaterialTheme.typography.bodySmall)
-
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        PlayerRoster(
-            modifier = Modifier.weight(1f),
-            label = "Home",
-            players = state.playersHome,
-            onNameChange = { i, name -> GameStateHolder.setPlayerHome(i, name) },
-            onAdd = { GameStateHolder.addPlayerHome() },
-            onRemove = { i -> GameStateHolder.removePlayerHome(i) },
-        )
-        PlayerRoster(
-            modifier = Modifier.weight(1f),
-            label = "Away",
-            players = state.playersAway,
-            onNameChange = { i, name -> GameStateHolder.setPlayerAway(i, name) },
-            onAdd = { GameStateHolder.addPlayerAway() },
-            onRemove = { i -> GameStateHolder.removePlayerAway(i) },
-        )
-    }
-}
-
-@Composable
-private fun PlayerRoster(
-    modifier: Modifier = Modifier,
-    label: String,
-    players: List<String>,
-    onNameChange: (Int, String) -> Unit,
-    onAdd: () -> Unit,
-    onRemove: (Int) -> Unit,
-) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(label, style = MaterialTheme.typography.labelSmall)
-        players.forEachIndexed { i, name ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { onNameChange(i, it) },
-                    label = { Text("P${i + 1}", fontSize = 9.sp) },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                SmallButton("×") { onRemove(i) }
-            }
-        }
-        SmallButton("+ Player") { onAdd() }
     }
 }
 
