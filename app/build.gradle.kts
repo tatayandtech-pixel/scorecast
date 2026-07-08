@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -60,4 +61,13 @@ dependencies {
     // StreamPack 3.1.2 — capture + composite + H.264 encode + RTMP egress.
     implementation(libs.streampack.core)
     implementation(libs.streampack.rtmp) // RtmpEndpoint is loaded reflectively by DynamicEndpoint.
+
+    // QR pairing (spec §3/§9) — generate on main, scan on mirror.
+    implementation(libs.zxing.embedded)
+    implementation(libs.zxing.core)
+
+    // Firebase (spec §3/§4) — Realtime Database + Anonymous Auth for two-device sync (Phase 5).
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.database)
+    implementation(libs.firebase.auth)
 }

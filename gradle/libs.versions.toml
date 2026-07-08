@@ -12,6 +12,15 @@ coroutines = "1.9.0"
 # StreamPack 3.1.2 is the current release (Feb 2026). Group id renamed in 3.x:
 # RTMP artifact is "streampack-rtmp" (was "streampack-extension-rtmp" in 2.x).
 streampack = "3.1.2"
+# QR pairing (spec §3/§9): generate on main, scan on mirror.
+zxingEmbedded = "4.3.0"
+zxingCore = "3.5.4"
+# Firebase (spec §3): Realtime Database + Anonymous Auth for two-device state sync (Phase 5).
+googleServices = "4.5.0"
+# Pinned below latest (34.x) on purpose: 34.x's firebase-auth is compiled against Kotlin 2.3.0
+# metadata, which our pinned Kotlin 2.1.0 compiler can't read ("incompatible version of Kotlin").
+# Bump this only alongside a deliberate Kotlin upgrade, not on its own.
+firebaseBom = "33.7.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -27,8 +36,16 @@ androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 streampack-core = { module = "io.github.thibaultbee.streampack:streampack-core", version.ref = "streampack" }
 streampack-rtmp = { module = "io.github.thibaultbee.streampack:streampack-rtmp", version.ref = "streampack" }
+zxing-embedded = { module = "com.journeyapps:zxing-android-embedded", version.ref = "zxingEmbedded" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxingCore" }
+firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
+# Kotlin extensions are built into the base artifacts as of Firebase BoM 32+ — the old
+# "-ktx" suffixed modules (firebase-database-ktx, firebase-auth-ktx) no longer exist.
+firebase-database = { module = "com.google.firebase:firebase-database" }
+firebase-auth = { module = "com.google.firebase:firebase-auth" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }

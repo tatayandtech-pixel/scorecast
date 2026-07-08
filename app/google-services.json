@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "452923426459",
+    "firebase_url": "https://scorecast-app-625c0-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "scorecast-app-625c0",
+    "storage_bucket": "scorecast-app-625c0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:452923426459:android:dda3982f4a351418d4283e",
+        "android_client_info": {
+          "package_name": "com.scorecast.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJJEFjdtkXP7kBxEgwmIv69ncUNLfEWPA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -79,18 +81,20 @@ class MainActivity : ComponentActivity() {
 
 /** Navigation skeleton (spec Appendix B/A): portrait setup screens, landscape in-game screen. */
 private enum class Screen {
-    HOME, MATCHES, WIZARD_SPORT, WIZARD_TEAMS, WIZARD_PLATFORM, WIZARD_DESTINATION, IN_GAME
+    HOME, MATCHES, WIZARD_SPORT, WIZARD_TEAMS, WIZARD_PLATFORM, WIZARD_DESTINATION, IN_GAME,
+    MIRROR_SCAN, MIRROR_SCORING,
 }
 
 @Composable
 private fun AppRoot() {
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
     var pendingTarget by remember { mutableStateOf(StreamTarget()) }
+    var mirrorSession by remember { mutableStateOf<SessionCode?>(null) }
     val activity = LocalContext.current as? Activity
 
-    // Setup flow (Home, Matches, the wizard) is portrait; the in-game screen is landscape (spec
-    // Appendix B "Orientation"). configChanges in the manifest keeps the Activity (and camera/
-    // StreamerHolder state) alive across this switch instead of recreating it.
+    // Setup flow (Home, Matches, the wizard, the mirror) is portrait; the in-game screen is
+    // landscape (spec Appendix B "Orientation"). configChanges in the manifest keeps the Activity
+    // (and camera/StreamerHolder state) alive across this switch instead of recreating it.
     LaunchedEffect(screen) {
         activity?.requestedOrientation = when (screen) {
             Screen.IN_GAME -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -101,8 +105,32 @@ private fun AppRoot() {
     when (screen) {
         Screen.HOME -> HomeScreen(
             onCreateStream = { screen = Screen.MATCHES },
-            onJoinAsRemote = { /* QR-paired mirror — Phase 5 */ },
+            onJoinAsRemote = { screen = Screen.MIRROR_SCAN },
         )
+        Screen.MIRROR_SCAN -> MirrorScanScreen(
+            onBack = { screen = Screen.HOME },
+            onJoined = { code ->
+                mirrorSession = code
+                screen = Screen.MIRROR_SCORING
+            },
+        )
+        Screen.MIRROR_SCORING -> {
+            val session = mirrorSession
+            if (session != null) {
+                MirrorScoringScreen(
+                    session = session,
+                    onLeave = {
+                        FirebaseSessionSync.stop()
+                        mirrorSession = null
+                        screen = Screen.HOME
+                    },
+                )
+            } else {
+                // Shouldn't happen via normal navigation (no session survives process death yet) —
+                // bounce back rather than crash on a null session.
+                LaunchedEffect(Unit) { screen = Screen.HOME }
+            }
+        }
         Screen.MATCHES -> MatchesScreen(
             onBack = { screen = Screen.HOME },
             onNewMatch = {
@@ -248,10 +276,10 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
                 streamerState      = streamerState,
                 onStop             = {
                     StreamingService.stop(context)
-                    // Spec Appendix A "End match": save the session to local history. The full
-                    // confirm-then-stop flow is separate follow-up work — this just captures the
-                    // record so the Matches screen has something real to show and rematch from.
+                    // Spec Appendix A "End match": save the session to local history.
                     MatchHistoryStore.save(context, MatchRecord.from(GameStateHolder.state.value))
+                    // Fresh pairing session (and QR) for the next match.
+                    SessionHolder.clear()
                     onExit()
                 },
             )
@@ -402,10 +430,15 @@ private fun LiveOverlay(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Remote-scoring toggle + scorer-connection dot — stub until Phase 5 (Firebase sync).
-                Switch(checked = false, onCheckedChange = { showPairDialog = true },
+                // Remote-scoring toggle + scorer-connection dot (spec §9), backed by Firebase presence.
+                val session by SessionHolder.session.collectAsState()
+                val mirrorConnected by FirebaseSessionSync.mirrorConnected.collectAsState()
+                Switch(checked = session != null, onCheckedChange = { showPairDialog = true },
                     modifier = Modifier.height(20.dp))
-                Chip(text = "● scorer offline", color = Color.Gray)
+                Chip(
+                    text = if (mirrorConnected) "● scorer connected" else "● scorer offline",
+                    color = if (mirrorConnected) Color(0xFF2E7D32) else Color.Gray,
+                )
                 TopBarIconButton(if (micMuted) "🔇" else "🎤") {
                     micMuted = !micMuted
                     (context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager)
@@ -452,19 +485,35 @@ private fun LiveOverlay(
     }
 
     if (showPairDialog) {
+        val session = remember { SessionHolder.ensureSession() }
+        val qrBitmap = remember(session) { QrCodeUtil.generate(session.toQrPayload()).asImageBitmap() }
         AlertDialog(
             onDismissRequest = { showPairDialog = false },
             title = { Text("Pair a Scoring Device") },
-            text  = {
-                Text(
-                    "QR-based remote scoring is coming in Phase 5 (Firebase sync).\n\n" +
-                    "A second device will scan a QR code to open a scoring controller that " +
-                    "updates scores, clock, and stats in real time while this device shows " +
-                    "the full-screen broadcast view."
-                )
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Image(
+                        bitmap = qrBitmap,
+                        contentDescription = "Pairing QR code",
+                        modifier = Modifier.size(200.dp),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "On the second device, tap \"Join as remote scorer\" on the Home screen " +
+                            "and scan this code.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Firebase sync isn't wired up yet — pairing works, but score changes on " +
+                            "the mirror won't reach this device until that lands.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             },
             confirmButton = {
-                TextButton(onClick = { showPairDialog = false }) { Text("Got it") }
+                TextButton(onClick = { showPairDialog = false }) { Text("Done") }
             },
         )
     }

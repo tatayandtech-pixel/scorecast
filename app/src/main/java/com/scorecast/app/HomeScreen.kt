@@ -44,8 +44,7 @@ fun HomeScreen(
         Spacer(Modifier.height(16.dp))
         HomeCard(
             title = "Join as remote scorer",
-            subtitle = "Coming in Phase 5 (Firebase sync)",
-            enabled = false,
+            subtitle = "Scan the main device's pairing QR code",
             onClick = onJoinAsRemote,
         )
     }

@@ -12,6 +12,15 @@ object GameStateHolder {
         _state.value = _state.value.block()
     }
 
+    /**
+     * Applies a state snapshot received from Firebase (spec §4) without going through the normal
+     * mutation helpers — used by [FirebaseSessionSync] when a remote change comes in. Local-first
+     * (spec §2): this only ever runs in response to a remote update, never blocks a local edit.
+     */
+    fun applyRemote(remote: GameState) {
+        _state.value = remote
+    }
+
     fun startClock() = update {
         if (clockRunning) this
         else copy(clockRunning = true, startedAtMs = System.currentTimeMillis())
