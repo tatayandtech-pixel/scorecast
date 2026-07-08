@@ -60,7 +60,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -487,6 +490,9 @@ private fun LiveOverlay(
     if (showPairDialog) {
         val session = remember { SessionHolder.ensureSession() }
         val qrBitmap = remember(session) { QrCodeUtil.generate(session.toQrPayload()).asImageBitmap() }
+        val clipboard = LocalClipboardManager.current
+        val pairingCode = "${session.sessionId}:${session.joinToken}"
+        var copied by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showPairDialog = false },
             title = { Text("Pair a Scoring Device") },
@@ -499,17 +505,27 @@ private fun LiveOverlay(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "On the second device, tap \"Join as remote scorer\" on the Home screen " +
+                        "On an Android device, tap \"Join as remote scorer\" on the Home screen " +
                             "and scan this code.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Firebase sync isn't wired up yet — pairing works, but score changes on " +
-                            "the mirror won't reach this device until that lands.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        "On an iPhone or a laptop, open the ScoreCast web mirror instead and " +
+                            "enter this code:",
+                        style = MaterialTheme.typography.bodySmall,
                     )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        pairingCode,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    TextButton(onClick = {
+                        clipboard.setText(AnnotatedString(pairingCode))
+                        copied = true
+                    }) { Text(if (copied) "Copied!" else "Copy code") }
                 }
             },
             confirmButton = {
