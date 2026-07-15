@@ -141,18 +141,43 @@ object ScoreboardOverlay {
 
     // ---- logos ----
 
+    // Logos within this normalized distance of each other count as "the same spot" (owner
+    // request): sponsor top-left + league top-right stay simultaneously visible since they're in
+    // different spots, but two logos dragged to the same corner take turns instead of stacking.
+    private const val LOGO_SAME_SPOT_EPSILON = 0.03f
+    private const val LOGO_ROTATION_INTERVAL_MS = 10_000L
+
     private fun drawLogos(canvas: Canvas, logos: List<LogoEntry>, frame: Size) {
         val logoPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         val baseW = frame.width * 0.14f
+        val now = System.currentTimeMillis()
 
-        for (logo in logos) {
-            val bmp = LogoHolder.getBitmap(logo.id) ?: continue
-            val logoW = (baseW * logo.scale).coerceAtLeast(1f)
+        for (group in groupLogosBySpot(logos)) {
+            // A single logo in its own spot is always shown; 2+ sharing a spot rotate every
+            // LOGO_ROTATION_INTERVAL_MS, purely as a function of wall-clock time — no separate
+            // ticking state to keep in sync with the render loop.
+            val active = if (group.size == 1) group[0]
+                else group[((now / LOGO_ROTATION_INTERVAL_MS) % group.size).toInt()]
+            val bmp = LogoHolder.getBitmap(active.id) ?: continue
+            val logoW = (baseW * active.scale).coerceAtLeast(1f)
             val logoH = bmp.height * logoW / bmp.width
-            val x = frame.width * logo.normalizedX
-            val y = frame.height * logo.normalizedY
+            val x = frame.width * active.normalizedX
+            val y = frame.height * active.normalizedY
             canvas.drawBitmap(bmp, null, RectF(x, y, x + logoW, y + logoH), logoPaint)
         }
+    }
+
+    private fun groupLogosBySpot(logos: List<LogoEntry>): List<List<LogoEntry>> {
+        val groups = mutableListOf<MutableList<LogoEntry>>()
+        for (logo in logos) {
+            val group = groups.firstOrNull { g ->
+                val rep = g[0]
+                kotlin.math.abs(rep.normalizedX - logo.normalizedX) <= LOGO_SAME_SPOT_EPSILON &&
+                    kotlin.math.abs(rep.normalizedY - logo.normalizedY) <= LOGO_SAME_SPOT_EPSILON
+            }
+            if (group != null) group.add(logo) else groups.add(mutableListOf(logo))
+        }
+        return groups
     }
 
     // ---- helpers ----
