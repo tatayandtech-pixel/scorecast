@@ -102,6 +102,9 @@ private fun AppRoot() {
     LaunchedEffect(screen) {
         activity?.requestedOrientation = when (screen) {
             Screen.IN_GAME -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            // Mirror scoring device: free to rotate (owner request) — a wider landscape layout is
+            // easier to score from than the portrait-only lock every other setup screen uses.
+            Screen.MIRROR_SCORING -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
     }
