@@ -56,7 +56,15 @@ object FirebaseSessionSync {
     private var membersListener: ValueEventListener? = null
     private var role: Role = Role.MAIN
     private var previousState: GameState? = null
-    @Volatile private var applyingRemote = false
+    // Identity (not just equality) of the last remote GameState applied via applyRemote(), so the
+    // local-change collector below can recognize its own echo and skip re-pushing it. A boolean
+    // flag toggled true/false around applyRemote() was tried first and raced: GameStateHolder's
+    // StateFlow collector runs in a separate launched coroutine, so the flag was already back to
+    // false by the time the collector actually observed the emission, and the "local" diff it
+    // computed got pushed straight back to Firebase — a runaway increment loop between two paired
+    // devices (reproduced live: awayScore climbed past 2 million in seconds before both apps were
+    // force-stopped). Comparing object identity instead has no such timing dependency.
+    @Volatile private var lastAppliedRemote: GameState? = null
 
     /** Main device: create the session, write the initial state + membership, start syncing. */
     fun startAsMain(session: SessionCode) {
@@ -164,6 +172,7 @@ object FirebaseSessionSync {
         connectedListener = null
         sessionRef = null
         previousState = null
+        lastAppliedRemote = null
         _connectionState.value = ConnectionState.Idle
         _mirrorConnected.value = false
     }
@@ -184,12 +193,12 @@ object FirebaseSessionSync {
         previousState = GameStateHolder.state.value
         pushJob = scope.launch {
             GameStateHolder.state.drop(1).collect { newState ->
-                if (applyingRemote) {
-                    previousState = newState
-                    return@collect
-                }
                 val old = previousState
                 previousState = newState
+                if (newState === lastAppliedRemote) {
+                    lastAppliedRemote = null
+                    return@collect
+                }
                 if (old != null) pushDiff(ref, old, newState)
             }
         }
@@ -240,9 +249,8 @@ object FirebaseSessionSync {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val remote = snapshot.toGameState() ?: return
-                applyingRemote = true
+                lastAppliedRemote = remote
                 GameStateHolder.applyRemote(remote)
-                applyingRemote = false
             }
             override fun onCancelled(error: DatabaseError) {
                 _connectionState.value = ConnectionState.Failed(error.message)
