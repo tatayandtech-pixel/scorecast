@@ -398,7 +398,13 @@ private fun LiveOverlay(
                     .fillMaxHeight()
                     .width(340.dp)
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
-                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    // Bottom inset reserves clearance for the floating bottom-right action row
+                    // (battery/Hide panel/End match), which is drawn on top of this panel — see
+                    // below. Without it, on shorter screens the scrollable viewport extends
+                    // underneath those buttons, so the panel's last rows (Period/Clock) land
+                    // behind them and lose both their display and their touch targets to the
+                    // floating row's.
+                    .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 64.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
                 // Clears the top bar (health/recording chips, remote-scoring toggle, mic/share/
