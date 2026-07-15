@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -187,11 +188,28 @@ private fun TeamColumn(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        // Buffers keystrokes locally and only pushes to GameStateHolder (and thus Firebase) on
+        // focus loss, instead of syncing on every keystroke. Per-keystroke sync raced against the
+        // sync engine's own echo of each write (which replaces the whole local GameState — see
+        // FirebaseSessionSync.attachListener) and could clobber an in-progress edit with a stale,
+        // partially-typed value — reproduced live: a team name landed stuck at "AW" instead of the
+        // fully-typed name. Committing once on blur removes the window for that race entirely, and
+        // is arguably better UX anyway (viewers don't need to see a name update mid-keystroke).
+        var isFocused by remember { mutableStateOf(false) }
+        var localName by remember { mutableStateOf(teamName) }
+        LaunchedEffect(teamName) {
+            if (!isFocused) localName = teamName
+        }
         OutlinedTextField(
-            value = teamName,
-            onValueChange = onNameChange,
+            value = localName,
+            onValueChange = { localName = it },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focusState ->
+                    if (isFocused && !focusState.isFocused) onNameChange(localName)
+                    isFocused = focusState.isFocused
+                },
         )
         // Score stepper: always a -1, then the score, then dynamic +N buttons.
         Row(
