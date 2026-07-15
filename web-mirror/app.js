@@ -24,8 +24,15 @@ let currentUid = null;
 let sessionRef = null;
 let unsubscribeSession = null;
 let unsubscribeConnected = null;
+let unsubscribeOffset = null;
 let latestSessionData = null;
 let rejoinInFlight = false;
+
+// Clock skew correction (spec §5): Firebase resolves this path server-side, so "now" for the
+// clock-anchor math is Date.now() + serverOffsetMs rather than raw local time, matching the
+// Android app's ServerTimeSync. Read-only here — the web mirror has no clock controls.
+let serverOffsetMs = 0;
+let clockTickHandle = null;
 
 function showError(message) {
   const box = el("join-error");
@@ -94,13 +101,20 @@ function attachListeners() {
   unsubscribeConnected = onValue(connectedRef, (snap) => {
     setConnectionState(snap.val() === true ? "connected" : "reconnecting");
   });
+  const offsetRef = ref(db, ".info/serverTimeOffset");
+  unsubscribeOffset = onValue(offsetRef, (snap) => {
+    serverOffsetMs = snap.val() || 0;
+  });
 }
 
 function detachListeners() {
   if (unsubscribeSession) unsubscribeSession();
   if (unsubscribeConnected) unsubscribeConnected();
+  if (unsubscribeOffset) unsubscribeOffset();
   unsubscribeSession = null;
   unsubscribeConnected = null;
+  unsubscribeOffset = null;
+  stopClockTicking();
 }
 
 // Fires when the session listener is denied — most commonly because a dropped connection
@@ -172,6 +186,13 @@ function renderSession(data) {
   el("home-minus").disabled = isSetsGames || (data.homeScore ?? 0) <= 0;
   el("away-minus").disabled = isSetsGames || (data.awayScore ?? 0) <= 0;
 
+  // Clock (spec §5 anchor model) — read-only here, hidden for clockDirection "none" sports
+  // (e.g. volleyball) the same way the Android panel hides its clock row.
+  const clockDir = data.clockDirection || "down";
+  el("clock-row").hidden = clockDir === "none";
+  updateClockDisplay();
+  manageClockTicking(data.clockRunning === true);
+
   // Rebuild the +N buttons only when the sport (and therefore its increments) actually
   // changes — NOT on every score update. Every write we make immediately echoes back through
   // our own onValue listener, so rebuilding on every render meant the tapped button's DOM node
@@ -182,6 +203,44 @@ function renderSession(data) {
   if (data.sport !== lastRenderedSportKey) {
     lastRenderedSportKey = data.sport;
     renderScoreButtons(sport, isSetsGames);
+  }
+}
+
+function clockDisplaySeconds(data, nowMs) {
+  const dir = data.clockDirection || "down";
+  const base = data.baseRemaining ?? 0;
+  if (dir === "none") return 0;
+  if (!data.clockRunning) return base;
+  const elapsed = (nowMs - (data.startedAt ?? 0)) / 1000;
+  return dir === "up" ? base + elapsed : Math.max(0, base - elapsed);
+}
+
+function formatClock(totalSeconds) {
+  const whole = Math.floor(totalSeconds);
+  const m = Math.floor(whole / 60);
+  const s = whole % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function updateClockDisplay() {
+  if (!latestSessionData) return;
+  const seconds = clockDisplaySeconds(latestSessionData, Date.now() + serverOffsetMs);
+  el("clock-time").textContent = formatClock(seconds);
+}
+
+function manageClockTicking(running) {
+  if (running) {
+    if (clockTickHandle) return;
+    clockTickHandle = setInterval(updateClockDisplay, 500);
+  } else {
+    stopClockTicking();
+  }
+}
+
+function stopClockTicking() {
+  if (clockTickHandle) {
+    clearInterval(clockTickHandle);
+    clockTickHandle = null;
   }
 }
 

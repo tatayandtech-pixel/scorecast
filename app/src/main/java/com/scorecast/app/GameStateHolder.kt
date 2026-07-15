@@ -23,19 +23,19 @@ object GameStateHolder {
 
     fun startClock() = update {
         if (clockRunning) this
-        else copy(clockRunning = true, startedAtMs = System.currentTimeMillis())
+        else copy(clockRunning = true, startedAtMs = ServerTimeSync.nowMs())
     }
 
     fun stopClock() = update {
         if (!clockRunning) this
-        else copy(clockRunning = false, baseRemainingSeconds = clockDisplay(), startedAtMs = 0L)
+        else copy(clockRunning = false, baseRemainingSeconds = clockDisplay(ServerTimeSync.nowMs()), startedAtMs = 0L)
     }
 
     fun adjustClock(deltaSeconds: Float) = update {
-        val newBase = (clockDisplay() + deltaSeconds).coerceAtLeast(0f)
+        val newBase = (clockDisplay(ServerTimeSync.nowMs()) + deltaSeconds).coerceAtLeast(0f)
         copy(
             baseRemainingSeconds = newBase,
-            startedAtMs = if (clockRunning) System.currentTimeMillis() else startedAtMs,
+            startedAtMs = if (clockRunning) ServerTimeSync.nowMs() else startedAtMs,
         )
     }
 

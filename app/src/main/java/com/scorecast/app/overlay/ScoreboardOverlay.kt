@@ -11,6 +11,7 @@ import com.scorecast.app.GameState
 import com.scorecast.app.LogoEntry
 import com.scorecast.app.LogoHolder
 import com.scorecast.app.OverlayPosition
+import com.scorecast.app.ServerTimeSync
 import com.scorecast.app.SportConfig
 import com.scorecast.app.clockDisplay
 import com.scorecast.app.toClockString
@@ -114,7 +115,7 @@ object ScoreboardOverlay {
         canvas.drawText(state.awayScore.toString(), cx + barH * 0.12f, scoreY, whiteBold)
 
         // Period / clock / custom text row.
-        val clock = state.clockDisplay().toClockString()
+        val clock = state.clockDisplay(ServerTimeSync.nowMs()).toClockString()
         val center = buildString {
             append("${state.periodLabel}${state.period}  •  $clock")
             if (state.customText.isNotBlank()) append("  •  ${state.customText}")

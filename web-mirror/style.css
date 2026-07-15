@@ -115,6 +115,27 @@ button {
   padding: 0;
 }
 
+.clock-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: var(--card);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+}
+
+.clock-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.clock-time {
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .teams {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -63,6 +63,7 @@ object FirebaseSessionSync {
         stop()
         role = Role.MAIN
         _connectionState.value = ConnectionState.Connecting
+        ServerTimeSync.start()
         authenticate { uid ->
             if (uid == null) {
                 _connectionState.value = ConnectionState.Failed("Sign-in failed")
@@ -99,6 +100,7 @@ object FirebaseSessionSync {
         stop()
         role = Role.MIRROR
         _connectionState.value = ConnectionState.Connecting
+        ServerTimeSync.start()
         authenticate { uid ->
             if (uid == null) {
                 _connectionState.value = ConnectionState.Failed("Sign-in failed")
@@ -149,6 +151,7 @@ object FirebaseSessionSync {
         if (deleteSession && role == Role.MAIN) {
             sessionRef?.removeValue()
         }
+        ServerTimeSync.stop()
         pushJob?.cancel()
         pushJob = null
         valueListener?.let { l -> sessionRef?.removeEventListener(l) }
@@ -215,7 +218,10 @@ object FirebaseSessionSync {
         if (new.periodLabel != old.periodLabel) updates["periodLabel"] = new.periodLabel
         if (new.clockDirection != old.clockDirection) updates["clockDirection"] = new.clockDirection
         if (new.clockRunning != old.clockRunning) updates["clockRunning"] = new.clockRunning
-        if (new.startedAtMs != old.startedAtMs) updates["startedAt"] = new.startedAtMs
+        if (new.startedAtMs != old.startedAtMs) {
+            // Server-resolved (spec §5) whenever the clock is running; see FirebaseStateMapping.
+            updates["startedAt"] = if (new.clockRunning) ServerValue.TIMESTAMP else new.startedAtMs
+        }
         if (new.baseRemainingSeconds != old.baseRemainingSeconds) {
             updates["baseRemaining"] = new.baseRemainingSeconds.toDouble()
         }

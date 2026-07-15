@@ -64,21 +64,11 @@ fun ScoringPanel() {
         SportConfigLoader.getCached(state.sport) ?: FALLBACK_CONFIG
     }
 
-    var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var tickMs by remember { mutableLongStateOf(ServerTimeSync.nowMs()) }
     LaunchedEffect(state.clockRunning) {
-        if (state.clockRunning) while (true) { delay(500); tickMs = System.currentTimeMillis() }
+        if (state.clockRunning) while (true) { delay(500); tickMs = ServerTimeSync.nowMs() }
     }
-    val displaySeconds = when (state.clockDirection) {
-        "up" -> if (state.clockRunning) {
-            val elapsed = (tickMs - state.startedAtMs) / 1000f
-            state.baseRemainingSeconds + elapsed
-        } else state.baseRemainingSeconds
-        "none" -> 0f
-        else -> if (state.clockRunning) {
-            val elapsed = (tickMs - state.startedAtMs) / 1000f
-            (state.baseRemainingSeconds - elapsed).coerceAtLeast(0f)
-        } else state.baseRemainingSeconds
-    }
+    val displaySeconds = state.clockDisplay(tickMs)
     val resetSeconds = if (state.clockDirection == "up") 0f else config.periodLength.toFloat()
 
     Column(modifier = Modifier.fillMaxWidth()) {

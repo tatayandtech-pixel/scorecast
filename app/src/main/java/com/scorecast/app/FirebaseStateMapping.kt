@@ -19,7 +19,10 @@ fun GameState.toFirebaseMap(joinToken: String, mainUid: String): Map<String, Any
     "periodLabel" to periodLabel,
     "clockDirection" to clockDirection,
     "clockRunning" to clockRunning,
-    "startedAt" to startedAtMs,
+    // Server-resolved (spec §5 "Clock skew") whenever the clock is actually running, so a paired
+    // device's elapsed-time math isn't thrown off by this device's own clock error. Irrelevant
+    // while stopped since clockDisplay() ignores startedAt in that state.
+    "startedAt" to if (clockRunning) ServerValue.TIMESTAMP else startedAtMs,
     "baseRemaining" to baseRemainingSeconds.toDouble(),
     "extraFields" to extraFields,
     "overlayPosition" to overlayPosition.name,

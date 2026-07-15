@@ -28,14 +28,16 @@ data class GameState(
     val playersAway: List<String> = emptyList(),
 )
 
-fun GameState.clockDisplay(): Float = when (clockDirection) {
+// nowMs defaults to raw device time; pass ServerTimeSync.nowMs() to correct for clock skew
+// against a paired device (spec §5).
+fun GameState.clockDisplay(nowMs: Long = System.currentTimeMillis()): Float = when (clockDirection) {
     "up" -> if (clockRunning) {
-        val elapsed = (System.currentTimeMillis() - startedAtMs) / 1000f
+        val elapsed = (nowMs - startedAtMs) / 1000f
         baseRemainingSeconds + elapsed
     } else baseRemainingSeconds
     "none" -> 0f
     else -> if (clockRunning) {
-        val elapsed = (System.currentTimeMillis() - startedAtMs) / 1000f
+        val elapsed = (nowMs - startedAtMs) / 1000f
         (baseRemainingSeconds - elapsed).coerceAtLeast(0f)
     } else baseRemainingSeconds
 }
