@@ -1,0 +1,17 @@
+{
+  "sport": "tabletennis",
+  "displayName": "Table Tennis",
+  "scoringModel": "setsGames",
+  "usesPlayers": false,
+  "periods": 5,
+  "periodLabel": "Game",
+  "periodLength": 0,
+  "bestOf": 5,
+  "pointsToWinGame": 11,
+  "finalSetPoints": null,
+  "winByTwo": true,
+  "pointCap": null,
+  "clockDirection": "none",
+  "scoreIncrements": [1],
+  "extraFields": []
+}

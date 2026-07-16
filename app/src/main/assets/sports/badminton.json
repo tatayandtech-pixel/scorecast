@@ -1,0 +1,17 @@
+{
+  "sport": "badminton",
+  "displayName": "Badminton",
+  "scoringModel": "setsGames",
+  "usesPlayers": false,
+  "periods": 3,
+  "periodLabel": "Game",
+  "periodLength": 0,
+  "bestOf": 3,
+  "pointsToWinGame": 21,
+  "finalSetPoints": null,
+  "winByTwo": true,
+  "pointCap": 30,
+  "clockDirection": "none",
+  "scoreIncrements": [1],
+  "extraFields": []
+}
