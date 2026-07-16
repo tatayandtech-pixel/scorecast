@@ -9,12 +9,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
+/** Owner request: two fixed corners instead of free placement — "logo" always top-left, sponsor
+ * logo always top-right. */
+enum class LogoSlot { TOP_LEFT, TOP_RIGHT }
+
 data class LogoEntry(
     val id: String = UUID.randomUUID().toString(),
     val uriString: String,
-    val normalizedX: Float = 0.05f,
-    val normalizedY: Float = 0.05f,
-    val scale: Float = 1.0f,
+    val slot: LogoSlot,
 )
 
 /** Manages logo bitmaps and their layout metadata. Logos stay device-local (spec §7). */
@@ -26,9 +28,9 @@ object LogoHolder {
 
     fun getBitmap(id: String): Bitmap? = bitmaps[id]
 
-    fun addLogo(context: Context, uri: Uri): Boolean {
+    fun addLogo(context: Context, uri: Uri, slot: LogoSlot): Boolean {
         val bmp = decodeSampled(context, uri, maxSide = 512) ?: return false
-        val entry = LogoEntry(uriString = uri.toString())
+        val entry = LogoEntry(uriString = uri.toString(), slot = slot)
         bitmaps[entry.id] = bmp
         _logos.value = _logos.value + entry
         return true
@@ -37,18 +39,6 @@ object LogoHolder {
     fun removeLogo(id: String) {
         bitmaps.remove(id)?.recycle()
         _logos.value = _logos.value.filter { it.id != id }
-    }
-
-    fun updatePosition(id: String, x: Float, y: Float) {
-        _logos.value = _logos.value.map {
-            if (it.id == id) it.copy(normalizedX = x.coerceIn(0f, 1f), normalizedY = y.coerceIn(0f, 1f)) else it
-        }
-    }
-
-    fun updateScale(id: String, scale: Float) {
-        _logos.value = _logos.value.map {
-            if (it.id == id) it.copy(scale = scale.coerceIn(0.2f, 3f)) else it
-        }
     }
 
     private fun decodeSampled(context: Context, uri: Uri, maxSide: Int): Bitmap? = try {

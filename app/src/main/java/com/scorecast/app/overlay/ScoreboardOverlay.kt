@@ -10,6 +10,7 @@ import android.util.Size
 import com.scorecast.app.GameState
 import com.scorecast.app.LogoEntry
 import com.scorecast.app.LogoHolder
+import com.scorecast.app.LogoSlot
 import com.scorecast.app.OverlayPosition
 import com.scorecast.app.ServerTimeSync
 import com.scorecast.app.SportConfig
@@ -141,43 +142,36 @@ object ScoreboardOverlay {
 
     // ---- logos ----
 
-    // Logos within this normalized distance of each other count as "the same spot" (owner
-    // request): sponsor top-left + league top-right stay simultaneously visible since they're in
-    // different spots, but two logos dragged to the same corner take turns instead of stacking.
-    private const val LOGO_SAME_SPOT_EPSILON = 0.03f
+    // Owner request: fixed corners, not free placement — "logo" always top-left, sponsor logo
+    // always top-right, both sized to this fixed box width (height follows each image's own
+    // aspect ratio, so nothing gets stretched). 2+ logos in the same corner rotate every
+    // LOGO_ROTATION_INTERVAL_MS, purely as a function of wall-clock time — no ticking state to
+    // keep in sync with the render loop.
+    private const val LOGO_BOX_WIDTH_FRACTION = 0.14f
+    private const val LOGO_MARGIN_FRACTION = 0.02f
     private const val LOGO_ROTATION_INTERVAL_MS = 10_000L
 
     private fun drawLogos(canvas: Canvas, logos: List<LogoEntry>, frame: Size) {
         val logoPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        val baseW = frame.width * 0.14f
+        val boxW = frame.width * LOGO_BOX_WIDTH_FRACTION
+        val marginX = frame.width * LOGO_MARGIN_FRACTION
+        val marginY = frame.height * LOGO_MARGIN_FRACTION
         val now = System.currentTimeMillis()
 
-        for (group in groupLogosBySpot(logos)) {
-            // A single logo in its own spot is always shown; 2+ sharing a spot rotate every
-            // LOGO_ROTATION_INTERVAL_MS, purely as a function of wall-clock time — no separate
-            // ticking state to keep in sync with the render loop.
+        for (slot in LogoSlot.entries) {
+            val group = logos.filter { it.slot == slot }
+            if (group.isEmpty()) continue
+            // A single logo in its corner is always shown; 2+ sharing it rotate over time.
             val active = if (group.size == 1) group[0]
                 else group[((now / LOGO_ROTATION_INTERVAL_MS) % group.size).toInt()]
             val bmp = LogoHolder.getBitmap(active.id) ?: continue
-            val logoW = (baseW * active.scale).coerceAtLeast(1f)
-            val logoH = bmp.height * logoW / bmp.width
-            val x = frame.width * active.normalizedX
-            val y = frame.height * active.normalizedY
-            canvas.drawBitmap(bmp, null, RectF(x, y, x + logoW, y + logoH), logoPaint)
-        }
-    }
-
-    private fun groupLogosBySpot(logos: List<LogoEntry>): List<List<LogoEntry>> {
-        val groups = mutableListOf<MutableList<LogoEntry>>()
-        for (logo in logos) {
-            val group = groups.firstOrNull { g ->
-                val rep = g[0]
-                kotlin.math.abs(rep.normalizedX - logo.normalizedX) <= LOGO_SAME_SPOT_EPSILON &&
-                    kotlin.math.abs(rep.normalizedY - logo.normalizedY) <= LOGO_SAME_SPOT_EPSILON
+            val logoH = bmp.height * boxW / bmp.width
+            val x = when (slot) {
+                LogoSlot.TOP_LEFT -> marginX
+                LogoSlot.TOP_RIGHT -> frame.width - boxW - marginX
             }
-            if (group != null) group.add(logo) else groups.add(mutableListOf(logo))
+            canvas.drawBitmap(bmp, null, RectF(x, marginY, x + boxW, marginY + logoH), logoPaint)
         }
-        return groups
     }
 
     // ---- helpers ----

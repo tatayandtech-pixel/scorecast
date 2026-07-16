@@ -11,117 +11,103 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private const val MAX_LOGOS = 6
+private const val MAX_LOGOS_PER_SLOT = 6
 
+// Owner request: no more free X/Y/size sliders — logos are fixed to one of two corners, sized to
+// a fixed box (see ScoreboardOverlay.LOGO_BOX_WIDTH_FRACTION). Two or more logos in the same
+// corner rotate automatically (ScoreboardOverlay.drawLogos); this panel just manages membership.
 @Composable
 fun LogoPanel() {
-    val context = LocalContext.current
     val logos by LogoHolder.logos.collectAsState()
 
+    Column(modifier = Modifier.fillMaxWidth()) {
+        LogoSlotSection(
+            title = "Logo (top-left)",
+            slot = LogoSlot.TOP_LEFT,
+            logos = logos.filter { it.slot == LogoSlot.TOP_LEFT },
+        )
+        Spacer(Modifier.height(8.dp))
+        LogoSlotSection(
+            title = "Sponsor logo (top-right)",
+            slot = LogoSlot.TOP_RIGHT,
+            logos = logos.filter { it.slot == LogoSlot.TOP_RIGHT },
+        )
+    }
+}
+
+@Composable
+private fun LogoSlotSection(title: String, slot: LogoSlot, logos: List<LogoEntry>) {
+    val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        if (uri != null) LogoHolder.addLogo(context, uri)
+        if (uri != null) LogoHolder.addLogo(context, uri, slot)
     }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth()) {
-            Text("Logos", style = MaterialTheme.typography.titleSmall)
-            OutlinedButton(
-                onClick = { picker.launch("image/*") },
-                enabled = logos.size < MAX_LOGOS,
-                modifier = Modifier.height(28.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                shape = RoundedCornerShape(4.dp),
-            ) { Text("+ Add", fontSize = 11.sp) }
-        }
+    Row(verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth()) {
+        Text(title, style = MaterialTheme.typography.titleSmall)
+        OutlinedButton(
+            onClick = { picker.launch("image/*") },
+            enabled = logos.size < MAX_LOGOS_PER_SLOT,
+            modifier = Modifier.height(28.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+            shape = RoundedCornerShape(4.dp),
+        ) { Text("+ Add", fontSize = 11.sp) }
+    }
 
-        if (logos.size >= MAX_LOGOS) {
-            Text("Maximum of $MAX_LOGOS logos (spec Appendix B6)",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp))
-        }
+    if (logos.size >= MAX_LOGOS_PER_SLOT) {
+        Text("Maximum of $MAX_LOGOS_PER_SLOT logos in this spot",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp))
+    } else if (logos.isEmpty()) {
+        Text("No logos — tap + Add to pick a PNG/JPG",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = 4.dp))
+    } else if (logos.size >= 2) {
+        Text("${logos.size} logos here — they'll take turns every 10s",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp))
+    }
 
-        if (logos.isEmpty()) {
-            Text("No logos — tap + Add to pick a PNG/JPG",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 4.dp))
-        }
-
-        logos.forEach { logo ->
-            LogoRow(logo = logo, onRemove = { LogoHolder.removeLogo(logo.id) })
-            Spacer(Modifier.height(4.dp))
-        }
+    logos.forEach { logo ->
+        LogoRow(logo = logo, onRemove = { LogoHolder.removeLogo(logo.id) })
+        Spacer(Modifier.height(4.dp))
     }
 }
 
 @Composable
 private fun LogoRow(logo: LogoEntry, onRemove: () -> Unit) {
-    Column(
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth()) {
-            Text("Logo ${logo.id.take(6)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-            OutlinedButton(
-                onClick = onRemove,
-                modifier = Modifier.height(24.dp).size(width = 56.dp, height = 24.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                shape = RoundedCornerShape(4.dp),
-            ) { Text("Remove", fontSize = 9.sp) }
-        }
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("X", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(12.dp))
-            Slider(
-                value = logo.normalizedX,
-                onValueChange = { LogoHolder.updatePosition(logo.id, it, logo.normalizedY) },
-                valueRange = 0f..0.85f,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Y", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(12.dp))
-            Slider(
-                value = logo.normalizedY,
-                onValueChange = { LogoHolder.updatePosition(logo.id, logo.normalizedX, it) },
-                valueRange = 0f..0.85f,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Sz", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(12.dp))
-            Slider(
-                value = logo.scale,
-                onValueChange = { LogoHolder.updateScale(logo.id, it) },
-                valueRange = 0.2f..3f,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        Text("Logo ${logo.id.take(6)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+        OutlinedButton(
+            onClick = onRemove,
+            modifier = Modifier.height(24.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+            shape = RoundedCornerShape(4.dp),
+        ) { Text("Remove", fontSize = 9.sp) }
     }
 }
