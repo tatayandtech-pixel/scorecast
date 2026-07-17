@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-17T00:00:00.000Z",
+  "title": "Design System: ScoreCast",
+  "extensions": {
+    "colorMeta": {
+      "bg-void": {
+        "role": "neutral",
+        "displayName": "Void",
+        "canonical": "#111318",
+        "tonalRamp": ["#0a0b0e", "#111318", "#1c1f26", "#2a2e37", "#3a3f4a", "#5a606d", "#9aa0ab", "#f2f2f2"]
+      },
+      "surface-card": {
+        "role": "neutral",
+        "displayName": "Card Surface",
+        "canonical": "#1c1f26",
+        "tonalRamp": ["#0a0b0e", "#111318", "#1c1f26", "#2a2e37", "#3a3f4a", "#5a606d", "#9aa0ab", "#f2f2f2"]
+      },
+      "pill-surface": {
+        "role": "neutral",
+        "displayName": "Pill Surface",
+        "canonical": "#262a33",
+        "tonalRamp": ["#0d0e11", "#171a20", "#262a33", "#363b46", "#474d5a", "#6b7280", "#a3a9b3", "#eceef2"]
+      },
+      "signal-lavender": {
+        "role": "primary",
+        "displayName": "Muted Signal Lavender",
+        "canonical": "#b39ddb",
+        "tonalRamp": ["#2a1f3d", "#4a3766", "#6c4f92", "#8f6dba", "#b39ddb", "#c8b8e6", "#ddd0f0", "#f0e9f8"]
+      },
+      "status-ok": {
+        "role": "secondary",
+        "displayName": "Connected Green",
+        "canonical": "#66bb6a",
+        "tonalRamp": ["#1a3d1c", "#2d6631", "#428f47", "#66bb6a", "#8ccb8f", "#b3dbb5", "#d9ecda", "#eef7ef"]
+      },
+      "status-pending": {
+        "role": "tertiary",
+        "displayName": "Reconnecting Amber",
+        "canonical": "#ffb74d",
+        "tonalRamp": ["#4d3410", "#805819", "#b37c22", "#ffb74d", "#ffcb7a", "#ffdea3", "#ffefd1", "#fff8ec"]
+      },
+      "status-danger": {
+        "role": "tertiary",
+        "displayName": "Error Coral",
+        "canonical": "#e57373",
+        "tonalRamp": ["#4d1f1f", "#803434", "#b34949", "#e57373", "#ec9797", "#f2b8b8", "#f8dada", "#fcefef"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The live score — the single most-glanced-at number on the page; tabular-nums so digits don't jitter." },
+      "headline": { "displayName": "Headline", "purpose": "Page title only." },
+      "title": { "displayName": "Title", "purpose": "The live clock; tabular-nums so digits don't jitter." },
+      "body": { "displayName": "Body", "purpose": "Hints, instructional copy, sets readout." },
+      "label": { "displayName": "Label", "purpose": "Field labels, subtitle, sport name, status text." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "tap-feedback", "value": "background-color 0s (instant :active state)", "purpose": "Pill buttons invert to Signal Lavender the instant they're tapped — no transition delay, since confirmation speed matters more than polish here." }
+    ],
+    "breakpoints": [
+      { "name": "single-column", "value": "480px", "purpose": "main is capped at max-width 480px and centered; the layout doesn't otherwise branch by breakpoint." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Full-width primary action (Join). Signal Lavender fill, dark ink text.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Join</button>",
+      "css": ".ds-btn-primary { width: 100%; padding: 14px; font-size: 1rem; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; border: none; border-radius: 10px; background: #b39ddb; color: #1a1a1a; cursor: pointer; } .ds-btn-primary:disabled { opacity: 0.6; } .ds-btn-primary:focus-visible { outline: 2px solid #b39ddb; outline-offset: 2px; } @media (hover: hover) { .ds-btn-primary:not(:disabled):hover { filter: brightness(1.1); } }"
+    },
+    {
+      "name": "Score Pill (default)",
+      "kind": "button",
+      "refersTo": "pill-btn",
+      "description": "Score increment/decrement control. Inverts to Signal Lavender on tap as its only feedback state.",
+      "html": "<button class=\"ds-pill-btn\" type=\"button\">+1</button>",
+      "css": ".ds-pill-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; min-height: 44px; padding: 10px 14px; border-radius: 999px; border: 1px solid var(--border, #3a3f4a); background: var(--pill-bg, #262a33); color: #f2f2f2; font-size: 1rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; cursor: pointer; } .ds-pill-btn:active { background: #b39ddb; color: #1a1a1a; } .ds-pill-btn:disabled { opacity: 0.4; } .ds-pill-btn:focus-visible { outline: 2px solid #b39ddb; outline-offset: 2px; } @media (hover: hover) { .ds-pill-btn:not(:disabled):hover { border-color: #b39ddb; } }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input-text",
+      "description": "Pairing-code field. Card Surface background, subtle border, no icon.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"sessionId:joinToken\" />",
+      "css": ".ds-input { width: 100%; padding: 14px; font-size: 1rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; border-radius: 10px; border: 1px solid #3a3f4a; background: #1c1f26; color: #f2f2f2; } .ds-input:focus-visible { outline: 2px solid #b39ddb; outline-offset: 2px; }"
+    },
+    {
+      "name": "Team Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Team name, live score, and its increment/decrement row.",
+      "html": "<div class=\"ds-card\"><h2 class=\"ds-card-title\">HOME</h2><div class=\"ds-card-score\">12</div></div>",
+      "css": ".ds-card { background: #1c1f26; border-radius: 12px; padding: 16px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; } .ds-card-title { font-size: 1rem; font-weight: 700; margin: 0 0 8px; color: #f2f2f2; overflow-wrap: anywhere; } .ds-card-score { font-size: 2.5rem; font-weight: 700; font-variant-numeric: tabular-nums; color: #f2f2f2; margin-bottom: 12px; }"
+    },
+    {
+      "name": "Status Dot",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Connection state — always pairs a colored bullet with a text label, never color alone.",
+      "html": "<span class=\"ds-dot ds-dot-connected\">● Connected</span>",
+      "css": ".ds-dot { font-size: 0.85rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; } .ds-dot-connected { color: #66bb6a; } .ds-dot-pending { color: #ffb74d; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Sideline Console",
+    "overview": "This is a control surface, not a page or an app in the marketing sense. Whether it's the operator glancing at a phone mounted courtside while also framing the camera shot, or a remote scorer half-attention on a live match at a laptop, the job is the same: glance, register a number, tap, and move on. The dark-void background and flat card layering exist so the screen doesn't glare, and so the two things that actually matter — the score and the clock — are the highest-contrast elements on it by construction, not by accident. One brand, two platforms: the web mirror expresses it in CSS custom properties; the Android app expresses the identical hex values through a Material3 ColorScheme (com.scorecast.app.theme.ScoreCastTheme). It explicitly rejects dashboard styling: no card grids beyond what a screen's actual content needs, no gradients, no hero-metric treatment, no unnecessary navigation chrome. Every element on screen is either the current game state or a control to change it. Nothing is here to look designed; it's here to be trusted at a glance during a live broadcast.",
+    "keyCharacteristics": [
+      "Two-tone flat layering (void background, one card/surface tone) — no shadows anywhere, on either platform",
+      "One accent color, used only for the primary action and the \"this is now selected\" state",
+      "System font stack on both platforms — different literal fonts (web system-ui stack vs. Android's default Roboto), same principle",
+      "Full light/dark parity via prefers-color-scheme (web) / isSystemInDarkTheme() (Android), not a manual toggle"
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "Signal Lavender appears in exactly two places: the primary Join action, and confirming which pill was just tapped. It never appears as decoration, and it never carries status meaning.", "section": "colors" },
+      { "name": "The Per-Theme Contrast Rule", "body": "Dark mode and light mode are not palette-swaps of the same five hues; each semantic color (accent, ok, pending, danger, muted) is independently verified at >=4.5:1 against its own theme's background. Amber in particular needs to go notably darker on a light surface than intuition suggests, since amber's native luminance is high.", "section": "colors" },
+      { "name": "The Accent-Ink Rule", "body": "Signal Lavender is used as a fill (Join button, active pill), so its paired ink color (--accent-ink) flips with it: dark ink on the light lavender fill in dark mode, white ink on the deeper purple fill in light mode. Any new component that fills with --accent must pair it with --accent-ink, never a hardcoded ink color.", "section": "colors" },
+      { "name": "The One Brand, Two Renderers Rule", "body": "A color value lives conceptually in one place (DESIGN.md's Colors section) and physically in two: the CSS custom property in web-mirror/style.css and the Kotlin Color(...) constant in Theme.kt. Changing one without the other is drift, not a platform-specific decision.", "section": "colors" },
+      { "name": "The Tabular Clock Rule", "body": "Any element showing a live-updating number that must not visually jitter gets font-variant-numeric: tabular-nums, applied to both the clock and the score.", "section": "typography" },
+      { "name": "The Flat-Only Rule", "body": "No box-shadow anywhere in this system (web). Android carries a known minor divergence: Material3's default Card applies its own subtle elevation, not yet overridden to zero.", "section": "elevation" },
+      { "name": "The Hover-Gate Rule", "body": "Every interactive element gets a :hover state, but always gated behind @media (hover: hover) so touch devices never get a stuck hover. The confirmed primary user is seated at a laptop/desk (mouse-first), so hover feedback is not optional polish here. Web-only — Android is touch-first and has no hover concept.", "section": "components" }
+    ],
+    "dos": [
+      "Do keep every status indicator paired with a text label alongside its color, exactly as the connection dot already does.",
+      "Do use Signal Lavender only for the primary action and the \"just tapped\" confirmation state.",
+      "Do give every tappable control immediate, visible feedback.",
+      "Do keep the system font stack.",
+      "Do apply tabular-nums to any new live-updating numeric display.",
+      "Do verify every semantic color independently against both the dark and light background before shipping it.",
+      "Do pair any --accent fill with --accent-ink, never a hardcoded ink color.",
+      "Do give every interactive element a :hover state gated behind @media (hover: hover), and a visible Signal Lavender :focus-visible ring.",
+      "Do reference MaterialTheme.colorScheme.* or ScoreCastColors.* for any Android brand/status color, never a bare Color(0x...) literal.",
+      "Do update both web-mirror/style.css and Theme.kt together when a brand color changes."
+    ],
+    "donts": [
+      "Don't add card-grid dashboard scaffolding, gradients, hero-metric layouts, or navigation chrome.",
+      "Don't add box-shadow anywhere.",
+      "Don't rely on color alone to convey state.",
+      "Don't rebuild a DOM element in direct response to its own click on the same event tick.",
+      "Don't introduce a second accent color.",
+      "Don't assume a dark-mode color value works unchanged in light mode — verify contrast per theme, not once.",
+      "Don't conflate the Android LIVE/Recording tally-light red with the brand's status-danger red — different colors for a deliberately different reason (broadcast convention vs. error state).",
+      "Don't touch ScoreboardOverlay.kt's team-color strips or white score/name text as part of brand harmonization — those are driven by user-picked colors and video-legibility requirements, not app chrome."
+    ]
+  }
+}

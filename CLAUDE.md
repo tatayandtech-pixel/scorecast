@@ -58,3 +58,6 @@ Spec §12 calls for `:streaming`, `:overlay`, `:capture`, `:core-state` etc. as 
 - At each phase/feature start: present a short plan (files to create and why), then WAIT for the owner's explicit go-ahead before writing code.
 - Ask when the spec is ambiguous rather than guessing.
 - Commit after each verified working step; small commits with clear messages. The owner keeps a last-known-good build at all times.
+
+## Design Context
+`PRODUCT.md` and `DESIGN.md` at the repo root now cover both UI surfaces under one shared brand: `web-mirror/` and the Android app's own Material3 theme (`app/src/main/java/com/scorecast/app/theme/Theme.kt`). Register: product. North Star: "The Sideline Console" — flat, dark-first, one restrained accent (Muted Signal Lavender), built for a glance-and-tap operator or remote scorer under time pressure. A color value lives in exactly one conceptual place (DESIGN.md's Colors section) and two physical ones (the CSS custom property in `web-mirror/style.css` and the Kotlin `Color(...)` constant in `Theme.kt`) — see the One Brand, Two Renderers rule. Read both docs before any UI work on either platform.

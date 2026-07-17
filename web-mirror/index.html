@@ -1,8 +1,12 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>ScoreCast — Remote Scorer</title>
 <link rel="stylesheet" href="style.css" />
-
+</head>
+<body>
 <main>
   <h1>ScoreCast <span class="subtitle">Remote Scorer</span></h1>
 
@@ -15,18 +19,18 @@
       <input id="pairing-code" name="pairing-code" type="text" inputmode="text"
              autocomplete="off" autocapitalize="off" spellcheck="false"
              placeholder="sessionId:joinToken" required />
-      <p id="join-error" class="error" hidden></p>
+      <p id="join-error" class="error" role="alert" hidden></p>
       <button id="join-btn" type="submit">Join</button>
     </form>
   </section>
 
   <section id="score-screen" hidden>
     <div class="status-row">
-      <span id="connection-dot" class="dot" data-state="connecting">● Connecting…</span>
+      <span id="connection-dot" class="dot" data-state="connecting" aria-live="polite">● Connecting…</span>
       <span id="sport-name" class="sport-name"></span>
       <button id="leave-btn" type="button" class="link-btn">Leave session</button>
     </div>
-    <p id="score-error" class="error" hidden></p>
+    <p id="score-error" class="error" role="alert" hidden></p>
 
     <div id="clock-row" class="clock-row" hidden>
       <span class="clock-label">Clock</span>
@@ -36,7 +40,7 @@
     <div class="teams">
       <div class="team-card">
         <h2 id="home-name">HOME</h2>
-        <div class="score" id="home-score">0</div>
+        <div class="score" id="home-score" aria-live="polite">0</div>
         <div class="btn-row">
           <button id="home-minus" class="pill-btn" type="button">-1</button>
           <span id="home-increments" class="btn-row"></span>
@@ -44,7 +48,7 @@
       </div>
       <div class="team-card">
         <h2 id="away-name">AWAY</h2>
-        <div class="score" id="away-score">0</div>
+        <div class="score" id="away-score" aria-live="polite">0</div>
         <div class="btn-row">
           <button id="away-minus" class="pill-btn" type="button">-1</button>
           <span id="away-increments" class="btn-row"></span>
@@ -53,11 +57,10 @@
     </div>
 
     <div id="sets-row" class="sets-row" hidden>
-      <p class="hint">
-        Set-based scoring (sets/win-by-two) isn't supported in the web mirror yet — scores
-        shown below are read-only here. Use a second Android device for full volleyball-style
-        scoring, or make these edits from the main device.
-      </p>
+      <div class="period-readout">
+        <span id="period-label" class="clock-label">Set</span>
+        <span id="period-value" class="period-value">1 of 5</span>
+      </div>
       <div class="sets-readout">
         <span>Sets — Home: <strong id="home-sets">0</strong></span>
         <span>Away: <strong id="away-sets">0</strong></span>
@@ -67,3 +70,5 @@
 </main>
 
 <script type="module" src="app.js"></script>
+</body>
+</html>

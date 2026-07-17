@@ -181,10 +181,12 @@ function renderSession(data) {
   if (isSetsGames) {
     el("home-sets").textContent = (data.setsWon && data.setsWon.home) ?? 0;
     el("away-sets").textContent = (data.setsWon && data.setsWon.away) ?? 0;
+    el("period-label").textContent = sport.periodLabel ?? "Set";
+    el("period-value").textContent = `${data.period ?? 1} of ${sport.periods ?? "?"}`;
   }
 
-  el("home-minus").disabled = isSetsGames || (data.homeScore ?? 0) <= 0;
-  el("away-minus").disabled = isSetsGames || (data.awayScore ?? 0) <= 0;
+  el("home-minus").disabled = (data.homeScore ?? 0) <= 0;
+  el("away-minus").disabled = (data.awayScore ?? 0) <= 0;
 
   // Clock (spec §5 anchor model) — read-only here, hidden for clockDirection "none" sports
   // (e.g. volleyball) the same way the Android panel hides its clock row.
@@ -202,7 +204,7 @@ function renderSession(data) {
   // needed (this was the "score climbs on its own, can't stop it" bug).
   if (data.sport !== lastRenderedSportKey) {
     lastRenderedSportKey = data.sport;
-    renderScoreButtons(sport, isSetsGames);
+    renderScoreButtons(sport);
   }
 }
 
@@ -244,12 +246,11 @@ function stopClockTicking() {
   }
 }
 
-function renderScoreButtons(sport, disabled) {
+function renderScoreButtons(sport) {
   const homeIncrements = el("home-increments");
   const awayIncrements = el("away-increments");
   homeIncrements.innerHTML = "";
   awayIncrements.innerHTML = "";
-  if (disabled) return;
 
   for (const amount of sport.scoreIncrements) {
     homeIncrements.appendChild(makeScoreButton("home", amount));
@@ -267,10 +268,58 @@ function makeScoreButton(side, amount) {
 }
 
 function bumpScore(side, amount) {
+  if (!latestSessionData) return;
+  const sport = Object.prototype.hasOwnProperty.call(SPORTS, latestSessionData.sport)
+    ? SPORTS[latestSessionData.sport]
+    : DEFAULT_SPORT;
+
+  if (sport.scoringModel === "setsGames") {
+    bumpSetsGamesScore(side, amount, sport);
+    return;
+  }
+
   const field = side === "home" ? "homeScore" : "awayScore";
   const current = (side === "home" ? latestSessionData?.homeScore : latestSessionData?.awayScore) ?? 0;
   if (amount < 0 && current <= 0) return; // matches Android's own floor-of-zero clamp
   pushUpdate({ [field]: increment(amount) });
+}
+
+// Mirrors GameStateHolder.addSetsGamesScore's exact rule (deciding-set target, win-by-two,
+// point-cap override) from the Android app. The rule itself is computed from the currently-known
+// score, same as Android does locally — but every write here is an increment() diffed against
+// that known score, exactly like FirebaseSessionSync.pushDiff, never an absolute overwrite. That's
+// what lets the main device and a mirror score at the same instant without one silently dropping
+// the other's point (see the "Scores/sets use atomic increments" note in CLAUDE.md).
+function bumpSetsGamesScore(side, delta, config) {
+  const isHome = side === "home";
+  const homeScore = latestSessionData.homeScore ?? 0;
+  const awayScore = latestSessionData.awayScore ?? 0;
+  const period = latestSessionData.period ?? 1;
+
+  if (delta < 0 && (isHome ? homeScore : awayScore) <= 0) return;
+
+  const newHomeScore = Math.max(0, isHome ? homeScore + delta : homeScore);
+  const newAwayScore = Math.max(0, !isHome ? awayScore + delta : awayScore);
+
+  const isDecidingSet = period >= (config.bestOf ?? Infinity);
+  const target = (isDecidingSet ? config.finalSetPoints : null) ?? config.pointsToWinGame ?? 25;
+  const leader = Math.max(newHomeScore, newAwayScore);
+  const diff = Math.abs(newHomeScore - newAwayScore);
+  const hardCapped = config.pointCap != null && leader >= config.pointCap;
+  const setWon = delta > 0 && leader >= target && (!config.winByTwo || diff >= 2 || hardCapped);
+
+  const updates = {};
+  if (setWon) {
+    const homeWonSet = newHomeScore > newAwayScore;
+    updates.homeScore = increment(-homeScore);
+    updates.awayScore = increment(-awayScore);
+    updates[homeWonSet ? "setsWon/home" : "setsWon/away"] = increment(1);
+    updates.period = Math.min(period + 1, config.periods ?? period + 1);
+  } else {
+    if (newHomeScore !== homeScore) updates.homeScore = increment(newHomeScore - homeScore);
+    if (newAwayScore !== awayScore) updates.awayScore = increment(newAwayScore - awayScore);
+  }
+  pushUpdate(updates);
 }
 
 function pushUpdate(fields) {

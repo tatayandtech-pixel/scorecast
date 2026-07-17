@@ -46,7 +46,6 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -70,13 +69,15 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
+import com.scorecast.app.theme.ScoreCastStatusOk
+import com.scorecast.app.theme.ScoreCastTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         SportConfigLoader.loadAll(this)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            ScoreCastTheme {
                 AppRoot()
             }
         }
@@ -439,7 +440,7 @@ private fun LiveOverlay(
                 )
                 Chip(
                     text = if (isRecording) "● Recording" else "○ Not being stored",
-                    color = if (isRecording) Color.Red else Color.Gray,
+                    color = if (isRecording) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -450,7 +451,7 @@ private fun LiveOverlay(
                     modifier = Modifier.height(20.dp))
                 Chip(
                     text = if (mirrorConnected) "● scorer connected" else "● scorer offline",
-                    color = if (mirrorConnected) Color(0xFF2E7D32) else Color.Gray,
+                    color = if (mirrorConnected) ScoreCastStatusOk() else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 TopBarIconButton(if (micMuted) "🔇" else "🎤") {
                     micMuted = !micMuted

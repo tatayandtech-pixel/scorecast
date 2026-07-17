@@ -67,9 +67,11 @@ object ScoreboardOverlay {
         val homeColor = parseColor(state.homeColorHex, Color.argb(255, 30, 64, 175))
         val awayColor = parseColor(state.awayColorHex, Color.argb(255, 185, 28, 28))
 
+        // Backdrop and dim-text tones (below) match the app's own Void/Muted brand colors —
+        // same values as ScoreCastTheme and web-mirror's DESIGN.md, not a coincidence.
         val r = barH * 0.14f
         canvas.drawRoundRect(RectF(0f, 0f, barW.toFloat(), barH.toFloat()), r, r,
-            paint { color = Color.argb(220, 10, 12, 18) })
+            paint { color = Color.argb(220, 17, 19, 24) })
 
         val stripW = barH * 0.09f
         canvas.drawRoundRect(RectF(0f, 0f, stripW, barH.toFloat()), r, r, paint { color = homeColor })
@@ -89,7 +91,7 @@ object ScoreboardOverlay {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val dimPaint = paint {
-            color = Color.argb(200, 170, 180, 195)
+            color = Color.argb(200, 154, 160, 171)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         }
 

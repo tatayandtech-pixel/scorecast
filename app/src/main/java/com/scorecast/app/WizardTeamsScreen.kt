@@ -56,7 +56,7 @@ fun WizardTeamsScreen(onBack: () -> Unit, onNext: () -> Unit) {
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFF10141C)),
+                    .background(MaterialTheme.colorScheme.background),
             )
             Spacer(Modifier.height(20.dp))
 

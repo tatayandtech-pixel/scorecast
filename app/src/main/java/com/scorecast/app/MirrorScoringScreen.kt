@@ -19,8 +19,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.scorecast.app.theme.ScoreCastStatusOk
+import com.scorecast.app.theme.ScoreCastStatusPending
 
 /**
  * Spec §9 step 4 — mirror device's scoring-only screen (no camera/video access, by design).
@@ -63,11 +64,11 @@ fun MirrorScoringScreen(session: SessionCode, onLeave: () -> Unit) {
 @Composable
 private fun ConnectionDot(state: FirebaseSessionSync.ConnectionState) {
     val (color, label) = when (state) {
-        FirebaseSessionSync.ConnectionState.Connected -> Color(0xFF2E7D32) to "Connected"
-        FirebaseSessionSync.ConnectionState.Connecting -> Color(0xFFF9A825) to "Connecting…"
-        FirebaseSessionSync.ConnectionState.Reconnecting -> Color(0xFFF9A825) to "Reconnecting…"
-        FirebaseSessionSync.ConnectionState.Idle -> Color.Gray to "Idle"
-        is FirebaseSessionSync.ConnectionState.Failed -> Color(0xFFC62828) to "Connection issue"
+        FirebaseSessionSync.ConnectionState.Connected -> ScoreCastStatusOk() to "Connected"
+        FirebaseSessionSync.ConnectionState.Connecting -> ScoreCastStatusPending() to "Connecting…"
+        FirebaseSessionSync.ConnectionState.Reconnecting -> ScoreCastStatusPending() to "Reconnecting…"
+        FirebaseSessionSync.ConnectionState.Idle -> MaterialTheme.colorScheme.onSurfaceVariant to "Idle"
+        is FirebaseSessionSync.ConnectionState.Failed -> MaterialTheme.colorScheme.error to "Connection issue"
     }
     Text("● $label", color = color, style = MaterialTheme.typography.labelMedium)
 }
