@@ -84,12 +84,12 @@ components:
     backgroundColor: "{colors.pill-surface}"
     textColor: "{colors.text-primary}"
     rounded: "{rounded.pill}"
-    padding: "10px 14px"
+    padding: "14px 20px"
   pill-btn-active:
     backgroundColor: "{colors.signal-lavender}"
     textColor: "{colors.signal-lavender-ink}"
     rounded: "{rounded.pill}"
-    padding: "10px 14px"
+    padding: "14px 20px"
   link-btn:
     backgroundColor: "transparent"
     textColor: "{colors.signal-lavender}"
@@ -204,7 +204,7 @@ Completely flat by intent on both platforms. Depth is conveyed by exactly one ba
 ### Buttons
 - **Shape:** 10px radius for the primary action button; fully pill (999px) for score-increment/decrement buttons. *(Android's `Button`/`OutlinedButton` use Material3's default shape rather than matching these exact radii — a cosmetic platform difference, not a brand-color one, and out of scope for this color-harmonization pass.)*
 - **Primary (`#join-btn`; Android: default `Button`, e.g. wizard "Next", "+ Stream new match"):** Signal Lavender background, `--accent-ink` text (dark #1a1a1a in dark mode, white in light mode — see the Accent-Ink Rule), 600 weight, full-width, 14px padding. Disabled state drops to 0.6 opacity — no color change, since disabled here means "request in flight," not "unavailable." Hover (pointer devices only, via `@media (hover: hover)`): `filter: brightness(1.1)`, skipped while disabled. Android has no hover concept (touch-first); this is web-only.
-- **Pill (score increments, `.pill-btn`; Android: `SmallButton` in `ScoringPanel.kt`, via `OutlinedButton`):** Pill Surface background, Subtle Border, 48px min-width × 44px min-height (a real touch target on both axes, not just a label — flex-centered so the number stays centered regardless of padding). On tap (`:active`), inverts to Signal Lavender background with `--accent-ink` text — the primary way a tap confirms itself. Hover (pointer devices only): border brightens to Signal Lavender, previewing the tap without committing to it.
+- **Pill (score increments, `.pill-btn`; Android: `SmallButton` in `ScoringPanel.kt`, via `OutlinedButton`):** Pill Surface background, Subtle Border, 64px min-width × 56px min-height, 1.15rem/600 weight (sized up from the original 44px WCAG-minimum touch target after live on-device use — the score buttons are the single most-tapped control on the page, and the extra size trades a little density for faster, more confident tapping; flex-centered so the number stays centered regardless of padding). On tap (`:active`), inverts to Signal Lavender background with `--accent-ink` text — the primary way a tap confirms itself. Hover (pointer devices only): border brightens to Signal Lavender, previewing the tap without committing to it.
 - **Link (`.link-btn`):** No background or border, Signal Lavender text, 0.85rem — used once, for "Leave session." Hover: underline.
 - **Focus (all of the above, plus the text input):** a shared `outline: 2px solid` Signal Lavender, 2px offset, on `:focus-visible` — the primary user context (someone seated at a laptop/desk) is keyboard/mouse-first, so a deliberate focus ring matters here more than it would on a touch-only surface. Android's touch-first primary interaction doesn't need an equivalent; Compose's default focus handling (keyboard/D-pad navigation) is left as-is.
 

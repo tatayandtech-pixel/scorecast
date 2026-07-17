@@ -192,14 +192,15 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 48px;
-  min-height: 44px;
-  padding: 10px 14px;
+  min-width: 64px;
+  min-height: 56px;
+  padding: 14px 20px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--pill-bg);
   color: var(--text);
-  font-size: 1rem;
+  font-size: 1.15rem;
+  font-weight: 600;
 }
 
 .pill-btn:active { background: var(--accent); color: var(--accent-ink); }
