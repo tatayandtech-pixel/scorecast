@@ -537,8 +537,8 @@ private fun LiveOverlay(
                         .weight(1f)
                         .fillMaxHeight()
                         .background(LiveTheme.Background)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.Center,
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     val shareAction = {
                         context.startActivity(
@@ -554,26 +554,20 @@ private fun LiveOverlay(
                             )
                         )
                     }
+                    // Remote-scoring toggle + scorer-connection dot (spec §9), backed by Firebase
+                    // presence — combined onto one row (was two) to free vertical room below for
+                    // the Countdown/Shot Clock row, which now fills the wide empty space this
+                    // column used to leave unused next to the video.
+                    val session by SessionHolder.session.collectAsState()
+                    val mirrorConnected by FirebaseSessionSync.mirrorConnected.collectAsState()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text("REMOTE SCORING", color = LiveTheme.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        // Remote-scoring toggle + scorer-connection dot (spec §9), backed by Firebase presence.
-                        val session by SessionHolder.session.collectAsState()
-                        val mirrorConnected by FirebaseSessionSync.mirrorConnected.collectAsState()
                         Switch(checked = session != null, onCheckedChange = { showPairDialog = true },
                             modifier = Modifier.height(20.dp))
-                        Spacer(Modifier.weight(1f))
-                        Text("🔗", fontSize = 16.sp, modifier = Modifier.clickable(onClick = shareAction))
-                        Spacer(Modifier.width(4.dp))
-                        Text("⋮", color = LiveTheme.TextPrimary, fontSize = 16.sp,
-                            modifier = Modifier.clickable { showMenuStub = true })
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        val mirrorConnected by FirebaseSessionSync.mirrorConnected.collectAsState()
                         Text(
                             if (mirrorConnected) "● Referee online" else "● Referee offline",
                             color = if (mirrorConnected) ScoreCastStatusOk() else LiveTheme.TextMuted,
@@ -585,35 +579,68 @@ private fun LiveOverlay(
                             (context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager)
                                 ?.isMicrophoneMute = micMuted
                         })
+                        Text("🔗", fontSize = 16.sp, modifier = Modifier.clickable(onClick = shareAction))
+                        Text("⋮", color = LiveTheme.TextPrimary, fontSize = 16.sp,
+                            modifier = Modifier.clickable { showMenuStub = true })
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
+                        LiveCountdownSection(
+                            displaySeconds = displaySeconds,
+                            clockRunning = state.clockRunning,
+                            onToggleRunning = {
+                                if (state.clockRunning) GameStateHolder.stopClock() else GameStateHolder.startClock()
+                            },
+                            onEdit = { showClockEditDialog = true },
+                            onAdjust = { GameStateHolder.adjustClock(it) },
+                            onReset = { GameStateHolder.resetClock(resetSeconds) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        // Shot clock — basketball only (config.shotClockSeconds) — now lives beside
+                        // the Countdown instead of stacked below the team cards, since this row has
+                        // plenty of width to spare.
+                        if (config.shotClockSeconds != null) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("SHOT CLOCK", color = LiveTheme.TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(shotClockSeconds.toClockString(), color = LiveTheme.TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    LiveSmallButton(if (state.shotClockRunning) "Stop" else "Start") {
+                                        if (state.shotClockRunning) GameStateHolder.stopShotClock() else GameStateHolder.startShotClock()
+                                    }
+                                    LiveSmallButton("-5") { GameStateHolder.adjustShotClock(-5f) }
+                                    LiveSmallButton("+5") { GameStateHolder.adjustShotClock(5f) }
+                                    LiveSmallButton("Rst") { GameStateHolder.resetShotClock(config.shotClockSeconds.toFloat()) }
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            // Rest of the screen: the permanent controls area, full width below the video/menu strip.
+            // Rest of the screen: team cards + bottom bar, sized to fill the remaining height
+            // exactly (no scrolling — Countdown/Shot Clock moved up into the video strip's empty
+            // space specifically to make this fit in one screen).
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .background(LiveTheme.Background)
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                LiveCountdownSection(
-                    displaySeconds = displaySeconds,
-                    clockRunning = state.clockRunning,
-                    onToggleRunning = {
-                        if (state.clockRunning) GameStateHolder.stopClock() else GameStateHolder.startClock()
-                    },
-                    onEdit = { showClockEditDialog = true },
-                    onAdjust = { GameStateHolder.adjustClock(it) },
-                    onReset = { GameStateHolder.resetClock(resetSeconds) },
-                )
-
-                Spacer(Modifier.height(14.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     LiveTeamCard(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
                         teamName = state.homeTeam,
                         score = state.homeScore,
                         setsWon = if (isSetsGames) state.setsWonHome else null,
@@ -627,7 +654,7 @@ private fun LiveOverlay(
                         onColorChange = { GameStateHolder.update { copy(homeColorHex = it) } },
                     )
                     LiveTeamCard(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
                         teamName = state.awayTeam,
                         score = state.awayScore,
                         setsWon = if (isSetsGames) state.setsWonAway else null,
@@ -642,23 +669,6 @@ private fun LiveOverlay(
                     )
                 }
 
-                // Shot clock — basketball only (config.shotClockSeconds), unchanged behavior, just
-                // restyled to match this screen's light/yellow palette.
-                if (config.shotClockSeconds != null) {
-                    Spacer(Modifier.height(10.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Shot Clock", color = LiveTheme.TextMuted, fontSize = 12.sp)
-                        Text(shotClockSeconds.toClockString(), color = LiveTheme.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        LiveSmallButton(if (state.shotClockRunning) "Stop" else "Start") {
-                            if (state.shotClockRunning) GameStateHolder.stopShotClock() else GameStateHolder.startShotClock()
-                        }
-                        LiveSmallButton("-5") { GameStateHolder.adjustShotClock(-5f) }
-                        LiveSmallButton("+5") { GameStateHolder.adjustShotClock(5f) }
-                        LiveSmallButton("Rst") { GameStateHolder.resetShotClock(config.shotClockSeconds.toFloat()) }
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
                 LiveBottomBar(
                     onStop = { showEndMatchConfirm = true },
                     isRecording = isRecording,

@@ -80,43 +80,38 @@ fun LiveCountdownSection(
     onReset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column {
+    // Two lines (label+time+play, then the adjust buttons) rather than one wide row — sharing
+    // half the video strip's width with Shot Clock left too little room for a single row holding
+    // all of it, which silently clipped the +30/Rst buttons off-screen.
+    Column(modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("COUNTDOWN", color = LiveTheme.TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("✎", color = LiveTheme.TextMuted, fontSize = 13.sp,
+                modifier = Modifier.clickable(onClick = onEdit))
             Text(
-                "COUNTDOWN",
-                color = LiveTheme.TextMuted,
-                fontSize = 11.sp,
+                displaySeconds.toClockString(),
+                color = LiveTheme.TextPrimary,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
             )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("✎", color = LiveTheme.TextMuted, fontSize = 14.sp,
-                    modifier = Modifier.clickable(onClick = onEdit))
-                Text(
-                    displaySeconds.toClockString(),
-                    color = LiveTheme.TextPrimary,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+            Spacer(Modifier.weight(1f))
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(LiveTheme.Accent)
+                    .clickable(onClick = onToggleRunning),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(if (clockRunning) "❚❚" else "▶", color = LiveTheme.AccentInk, fontSize = 14.sp)
             }
         }
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(LiveTheme.Accent)
-                .clickable(onClick = onToggleRunning),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(if (clockRunning) "❚❚" else "▶", color = LiveTheme.AccentInk, fontSize = 18.sp)
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            LiveSmallButton("-30") { onAdjust(-30f) }
+            LiveSmallButton("+30") { onAdjust(30f) }
+            LiveSmallButton("Rst") { onReset() }
         }
-        Spacer(Modifier.width(4.dp))
-        LiveSmallButton("-30") { onAdjust(-30f) }
-        LiveSmallButton("+30") { onAdjust(30f) }
-        LiveSmallButton("Rst") { onReset() }
     }
 }
 
@@ -150,6 +145,7 @@ fun LiveTeamCard(
             .clip(RoundedCornerShape(14.dp))
             .background(LiveTheme.CardBackground)
             .padding(14.dp),
+        verticalArrangement = Arrangement.Center,
     ) {
         var editingName by remember { mutableStateOf(false) }
         var localName by remember { mutableStateOf(teamName) }
