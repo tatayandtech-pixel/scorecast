@@ -3,21 +3,26 @@ package com.scorecast.app
 import android.Manifest
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
+import android.view.PixelCopy
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,6 +37,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -41,6 +47,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -51,19 +59,29 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -71,11 +89,14 @@ import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import com.scorecast.app.theme.ScoreCastStatusOk
 import com.scorecast.app.theme.ScoreCastTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         SportConfigLoader.loadAll(this)
+        GameStateHolder.update { copy(scoreboardLight = ScoreboardStylePrefs.isLight(this@MainActivity)) }
         setContent {
             ScoreCastTheme {
                 AppRoot()
@@ -189,6 +210,7 @@ private fun AppRoot() {
 @Composable
 private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = StreamTarget()) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val streamerState by StreamerHolder.state.collectAsState()
     val flip        by StreamerHolder.flip.collectAsState()
     val zoom        by StreamerHolder.zoomRatio.collectAsState()
@@ -196,8 +218,9 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
     var ingestUrl     by rememberSaveable { mutableStateOf(initialTarget.ingestUrl) }
     var streamKey     by rememberSaveable { mutableStateOf(initialTarget.streamKey) }
     var recordingMode by rememberSaveable { mutableStateOf(initialTarget.mode) }
-    var showScorePanel by rememberSaveable { mutableStateOf(true) }
+    var fullscreenVideo by rememberSaveable { mutableStateOf(false) }
     var startRequested by remember { mutableStateOf(false) }
+    var surfaceViewRef by remember { mutableStateOf<SurfaceView?>(null) }
 
     val isLive = streamerState is StreamerHolder.State.Live || streamerState is StreamerHolder.State.Starting
 
@@ -228,14 +251,25 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
         }
     }
 
+    // Live mode reserves the top 1/4 of the screen for video so the permanent controls area below
+    // has real room; the fullscreen toggle temporarily restores fillMaxSize. Either way this is
+    // just the AndroidView's Modifier changing — the SurfaceView itself is never recreated (see
+    // the factory comment below), so this can't reintroduce the camera-session-recreation bug.
+    val videoConstrained = isLive && !fullscreenVideo
+
     Box(Modifier.fillMaxSize()) {
         // Camera always fills the screen so the SurfaceView is never recreated.
         // A float[] tag lets the pinch handler read the current zoom without
         // re-running the factory lambda.
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = if (videoConstrained) {
+                Modifier.fillMaxHeight(0.32f).aspectRatio(StreamConfig.RESOLUTION.width / StreamConfig.RESOLUTION.height.toFloat()).align(Alignment.TopStart)
+            } else {
+                Modifier.fillMaxSize()
+            },
             factory = { ctx ->
                 SurfaceView(ctx).apply {
+                    surfaceViewRef = this
                     tag = floatArrayOf(zoom)
                     val scaleDetector = ScaleGestureDetector(ctx,
                         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -277,11 +311,24 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
                 onExit = onExit,
             )
         } else {
-            // ── LIVE mode: fullscreen camera + floating controls ──────────────
+            // ── LIVE mode: 1/4-height video strip + a permanent controls area ──
             LiveOverlay(
-                showScorePanel     = showScorePanel,
-                onToggleScorePanel = { showScorePanel = !showScorePanel },
+                fullscreenVideo    = fullscreenVideo,
+                onToggleFullscreen = { fullscreenVideo = !fullscreenVideo },
                 streamerState      = streamerState,
+                onCapturePhoto     = {
+                    // The preview SurfaceView is rendered at whatever size it's displayed at —
+                    // in the compact 1/4-height layout that's a low-res sliver, not a real photo.
+                    // Flash to fullscreen just long enough for the surface to resize up, capture,
+                    // then restore whatever mode the operator was actually in.
+                    val wasFullscreen = fullscreenVideo
+                    fullscreenVideo = true
+                    coroutineScope.launch {
+                        delay(350)
+                        surfaceViewRef?.let { sv -> capturePhoto(context, sv) }
+                        fullscreenVideo = wasFullscreen
+                    }
+                },
                 onStop             = {
                     StreamingService.stop(context)
                     // Spec Appendix A "End match": save the session to local history.
@@ -375,9 +422,10 @@ private fun SetupPanel(
 
 @Composable
 private fun LiveOverlay(
-    showScorePanel: Boolean,
-    onToggleScorePanel: () -> Unit,
+    fullscreenVideo: Boolean,
+    onToggleFullscreen: () -> Unit,
     streamerState: StreamerHolder.State,
+    onCapturePhoto: () -> Unit,
     onStop: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -389,51 +437,21 @@ private fun LiveOverlay(
     val isRecording = remember(streamerState) { StreamerHolder.currentRecordingFile != null }
     val batteryPct = rememberBatteryPercent()
 
-    Box(Modifier.fillMaxSize()) {
-        // Sliding scoring panel (right edge)
-        AnimatedVisibility(
-            visible = showScorePanel,
-            modifier = Modifier.align(Alignment.CenterEnd),
-            enter = slideInHorizontally(initialOffsetX = { it }),
-            exit  = slideOutHorizontally(targetOffsetX = { it }),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(340.dp)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
-                    // Bottom inset reserves clearance for the floating bottom-right action row
-                    // (battery/Hide panel/End match), which is drawn on top of this panel — see
-                    // below. Without it, on shorter screens the scrollable viewport extends
-                    // underneath those buttons, so the panel's last rows (Period/Clock) land
-                    // behind them and lose both their display and their touch targets to the
-                    // floating row's.
-                    .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 64.dp)
-                    .verticalScroll(rememberScrollState()),
+    if (fullscreenVideo) {
+        // Fullscreen mode, laid out to match the owner's reference photo: video-status chips
+        // bottom-left, exit-fullscreen top-end, a compact light/dark toggle for the burned-in
+        // scoreboard sitting in the gap to the right of the bar itself (not a Compose element —
+        // the bar is baked into the video frame — so this is an empirical offset matched to
+        // where the bar renders on this device, not a computed alignment), a vertical zoom slider
+        // + step buttons + battery readout down the right edge, and stacked photo/mic circular
+        // buttons bottom-end. The permanent scrollable controls area is still hidden here — this
+        // is a lean, glance-and-tap surface for framing/operating the shot itself, per the reference.
+        val gameState by GameStateHolder.state.collectAsState()
+        Box(Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Clears the top bar (health/recording chips, remote-scoring toggle, mic/share/
-                // overflow) drawn on top of this panel — see below. The panel's own pairing
-                // entry point was removed: the top bar's remote-scoring toggle covers it now.
-                Spacer(Modifier.height(40.dp))
-                Text("Scoring", style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(4.dp))
-                ScoringPanel()
-            }
-        }
-
-        // Top bar (spec Appendix A): health chip + recording indicator on the left,
-        // remote-scoring/scorer-status stub, mic toggle, share, and overflow on the right.
-        // Declared after the sliding panel so its icons stay on top and clickable while the
-        // panel is open, instead of being covered by it.
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Chip(
                     text = if (isStarting) "● Starting…" else "● LIVE",
                     color = if (isStarting) Color.Yellow else Color.Red,
@@ -443,58 +461,251 @@ private fun LiveOverlay(
                     color = if (isRecording) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Remote-scoring toggle + scorer-connection dot (spec §9), backed by Firebase presence.
-                val session by SessionHolder.session.collectAsState()
-                val mirrorConnected by FirebaseSessionSync.mirrorConnected.collectAsState()
-                Switch(checked = session != null, onCheckedChange = { showPairDialog = true },
-                    modifier = Modifier.height(20.dp))
-                Chip(
-                    text = if (mirrorConnected) "● scorer connected" else "● scorer offline",
-                    color = if (mirrorConnected) ScoreCastStatusOk() else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                TopBarIconButton(if (micMuted) "🔇" else "🎤") {
+            TopBarIconButton(
+                "⤢",
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                onClick = onToggleFullscreen,
+            )
+            FullscreenCircleButton(
+                if (gameState.scoreboardLight) "☀" else "🌙",
+                size = 44.dp,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 16.dp, end = 100.dp),
+            ) {
+                val newLight = GameStateHolder.toggleScoreboardBackground()
+                ScoreboardStylePrefs.setLight(context, newLight)
+            }
+            // Single column, top-anchored below the restore-fullscreen button (not vertically
+            // centered) — this device's landscape height (~360dp) is too short to center a taller
+            // stack without it overflowing both top and bottom edges, which is what collided with
+            // the restore button before this fix.
+            FullscreenSideControls(
+                batteryPct = batteryPct,
+                micMuted = micMuted,
+                onToggleMic = {
                     micMuted = !micMuted
                     (context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager)
                         ?.isMicrophoneMute = micMuted
-                }
-                TopBarIconButton("📤") {
-                    context.startActivity(
-                        android.content.Intent.createChooser(
-                            android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(
-                                    android.content.Intent.EXTRA_TEXT,
-                                    "Live now on ScoreCast: ${GameStateHolder.state.value.homeTeam} vs " +
-                                        "${GameStateHolder.state.value.awayTeam}",
-                                )
-                            },
-                            "Share",
+                },
+                onCapturePhoto = onCapturePhoto,
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 56.dp, end = 12.dp),
+            )
+        }
+    } else {
+        // Video aspect ratio must match the AndroidView sibling in AppRoot's Box so this row's
+        // left-hand spacer lines up exactly with the actual rendered video underneath.
+        val videoAspectRatio = StreamConfig.RESOLUTION.width / StreamConfig.RESOLUTION.height.toFloat()
+
+        // Owner-requested reference-match redesign (light background, yellow accent) — scoped to
+        // this screen only via LiveScoringView.kt's composables; see that file's header comment.
+        val state by GameStateHolder.state.collectAsState()
+        val config = remember(state.sport) {
+            SportConfigLoader.getCached(state.sport)
+                ?: SportConfig(sport = "basketball", displayName = "Basketball", periods = 4,
+                    periodLabel = "Q", periodLength = 600, clockDirection = "down", scoreIncrements = listOf(1, 2, 3))
+        }
+        var tickMs by remember { mutableLongStateOf(ServerTimeSync.nowMs()) }
+        LaunchedEffect(state.clockRunning, state.shotClockRunning) {
+            if (state.clockRunning || state.shotClockRunning) while (true) { delay(500); tickMs = ServerTimeSync.nowMs() }
+        }
+        val displaySeconds = state.clockDisplay(tickMs)
+        val shotClockSeconds = state.shotClockDisplay(tickMs)
+        val resetSeconds = if (state.clockDirection == "up") 0f else config.periodLength.toFloat()
+        val isSetsGames = config.scoringModel == "setsGames"
+        var showClockEditDialog by remember { mutableStateOf(false) }
+
+        Column(Modifier.fillMaxSize().background(LiveTheme.Background)) {
+            // Top strip, sized to match the video's fillMaxHeight(0.32f) in AppRoot: video pinned
+            // top-left (this Box is a transparent spacer — the real video renders underneath via
+            // the AndroidView sibling), status/menu bar fills the rest of the strip to its right.
+            Row(Modifier.fillMaxWidth().fillMaxHeight(0.32f)) {
+                Box(Modifier.fillMaxHeight().aspectRatio(videoAspectRatio)) {
+                    Row(
+                        modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Chip(
+                            text = if (isStarting) "● Starting…" else "● LIVE",
+                            color = if (isStarting) Color.Yellow else Color.Red,
                         )
+                        Chip(
+                            text = if (isRecording) "● Recording" else "○ Not being stored",
+                            color = if (isRecording) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TopBarIconButton(
+                        "⤢",
+                        modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                        onClick = onToggleFullscreen,
                     )
                 }
-                TopBarIconButton("⋮") { showMenuStub = true }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(LiveTheme.Background)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    val shareAction = {
+                        context.startActivity(
+                            android.content.Intent.createChooser(
+                                android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        android.content.Intent.EXTRA_TEXT,
+                                        "Live now on ScoreCast: ${state.homeTeam} vs ${state.awayTeam}",
+                                    )
+                                },
+                                "Share",
+                            )
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("REMOTE SCORING", color = LiveTheme.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        // Remote-scoring toggle + scorer-connection dot (spec §9), backed by Firebase presence.
+                        val session by SessionHolder.session.collectAsState()
+                        val mirrorConnected by FirebaseSessionSync.mirrorConnected.collectAsState()
+                        Switch(checked = session != null, onCheckedChange = { showPairDialog = true },
+                            modifier = Modifier.height(20.dp))
+                        Spacer(Modifier.weight(1f))
+                        Text("🔗", fontSize = 16.sp, modifier = Modifier.clickable(onClick = shareAction))
+                        Spacer(Modifier.width(4.dp))
+                        Text("⋮", color = LiveTheme.TextPrimary, fontSize = 16.sp,
+                            modifier = Modifier.clickable { showMenuStub = true })
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val mirrorConnected by FirebaseSessionSync.mirrorConnected.collectAsState()
+                        Text(
+                            if (mirrorConnected) "● Referee online" else "● Referee offline",
+                            color = if (mirrorConnected) ScoreCastStatusOk() else LiveTheme.TextMuted,
+                            fontSize = 11.sp,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(if (micMuted) "🔇" else "🎤", fontSize = 16.sp, modifier = Modifier.clickable {
+                            micMuted = !micMuted
+                            (context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager)
+                                ?.isMicrophoneMute = micMuted
+                        })
+                    }
+                }
+            }
+
+            // Rest of the screen: the permanent controls area, full width below the video/menu strip.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(LiveTheme.Background)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                LiveCountdownSection(
+                    displaySeconds = displaySeconds,
+                    clockRunning = state.clockRunning,
+                    onToggleRunning = {
+                        if (state.clockRunning) GameStateHolder.stopClock() else GameStateHolder.startClock()
+                    },
+                    onEdit = { showClockEditDialog = true },
+                    onAdjust = { GameStateHolder.adjustClock(it) },
+                    onReset = { GameStateHolder.resetClock(resetSeconds) },
+                )
+
+                Spacer(Modifier.height(14.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LiveTeamCard(
+                        modifier = Modifier.weight(1f),
+                        teamName = state.homeTeam,
+                        score = state.homeScore,
+                        setsWon = if (isSetsGames) state.setsWonHome else null,
+                        colorHex = state.homeColorHex,
+                        scoreIncrements = config.scoreIncrements,
+                        onNameChange = { GameStateHolder.update { copy(homeTeam = it) } },
+                        onScoreChange = {
+                            if (isSetsGames) GameStateHolder.addSetsGamesScore(true, it, config)
+                            else GameStateHolder.update { copy(homeScore = (homeScore + it).coerceAtLeast(0)) }
+                        },
+                        onColorChange = { GameStateHolder.update { copy(homeColorHex = it) } },
+                    )
+                    LiveTeamCard(
+                        modifier = Modifier.weight(1f),
+                        teamName = state.awayTeam,
+                        score = state.awayScore,
+                        setsWon = if (isSetsGames) state.setsWonAway else null,
+                        colorHex = state.awayColorHex,
+                        scoreIncrements = config.scoreIncrements,
+                        onNameChange = { GameStateHolder.update { copy(awayTeam = it) } },
+                        onScoreChange = {
+                            if (isSetsGames) GameStateHolder.addSetsGamesScore(false, it, config)
+                            else GameStateHolder.update { copy(awayScore = (awayScore + it).coerceAtLeast(0)) }
+                        },
+                        onColorChange = { GameStateHolder.update { copy(awayColorHex = it) } },
+                    )
+                }
+
+                // Shot clock — basketball only (config.shotClockSeconds), unchanged behavior, just
+                // restyled to match this screen's light/yellow palette.
+                if (config.shotClockSeconds != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Shot Clock", color = LiveTheme.TextMuted, fontSize = 12.sp)
+                        Text(shotClockSeconds.toClockString(), color = LiveTheme.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        LiveSmallButton(if (state.shotClockRunning) "Stop" else "Start") {
+                            if (state.shotClockRunning) GameStateHolder.stopShotClock() else GameStateHolder.startShotClock()
+                        }
+                        LiveSmallButton("-5") { GameStateHolder.adjustShotClock(-5f) }
+                        LiveSmallButton("+5") { GameStateHolder.adjustShotClock(5f) }
+                        LiveSmallButton("Rst") { GameStateHolder.resetShotClock(config.shotClockSeconds.toFloat()) }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                LiveZoomSlider()
+
+                Spacer(Modifier.height(10.dp))
+                LiveBottomBar(
+                    onStop = { showEndMatchConfirm = true },
+                    isRecording = isRecording,
+                    periodLabel = state.periodLabel,
+                    period = state.period,
+                    maxPeriod = config.periods,
+                    onPeriodMinus = { GameStateHolder.update { copy(period = (period - 1).coerceAtLeast(1)) } },
+                    onPeriodPlus = { if (state.period < config.periods) GameStateHolder.update { copy(period = period + 1) } },
+                    batteryPct = batteryPct,
+                    onShare = {
+                        context.startActivity(
+                            android.content.Intent.createChooser(
+                                android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        android.content.Intent.EXTRA_TEXT,
+                                        "Live now on ScoreCast: ${state.homeTeam} vs ${state.awayTeam}",
+                                    )
+                                },
+                                "Share",
+                            )
+                        )
+                    },
+                )
+                Spacer(Modifier.height(8.dp))
             }
         }
 
-        // Floating action row (bottom-right) — spec Appendix A bottom bar (battery + end match).
-        Row(
-            modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("🔋 $batteryPct%", style = MaterialTheme.typography.labelMedium)
-            OutlinedButton(
-                onClick = onToggleScorePanel,
-                shape = RoundedCornerShape(6.dp),
-            ) {
-                Text(if (showScorePanel) "Hide panel" else "📊 Score", fontSize = 12.sp)
-            }
-            Button(
-                onClick = { showEndMatchConfirm = true },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                shape = RoundedCornerShape(6.dp),
-            ) { Text("⏹ End match") }
+        if (showClockEditDialog) {
+            ClockEditDialog(
+                initialSeconds = displaySeconds,
+                onDismiss = { showClockEditDialog = false },
+                onConfirm = { totalSeconds ->
+                    GameStateHolder.resetClock(totalSeconds)
+                    showClockEditDialog = false
+                },
+            )
         }
     }
 
@@ -584,18 +795,154 @@ private fun Chip(text: String, color: Color) {
 }
 
 @Composable
-private fun TopBarIconButton(label: String, onClick: () -> Unit) {
+private fun TopBarIconButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     // Fixed-size Box instead of sizing off the glyph's own intrinsic bounds — some glyphs (e.g.
     // "⋮") measure far narrower than they look, which was shrinking the real tap target down to
     // a sliver despite the visible background looking full-size.
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(40.dp)
             .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(text = label, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
+private fun FullscreenCircleButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 48.dp,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = label, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+/** Small radiating "aperture" glyph decorating the top of the fullscreen zoom track (reference
+ *  photo) — purely decorative, no state of its own. */
+@Composable
+private fun ApertureIcon(size: androidx.compose.ui.unit.Dp, color: Color) {
+    Canvas(modifier = Modifier.size(size)) {
+        val r = this.size.minDimension / 2f
+        val cx = this.size.width / 2f
+        val cy = this.size.height / 2f
+        for (i in 0 until 6) {
+            rotate(i * 60f, pivot = Offset(cx, cy)) {
+                drawLine(
+                    color = color,
+                    start = Offset(cx, cy - r * 0.35f),
+                    end = Offset(cx, cy - r * 0.95f),
+                    strokeWidth = 2.5f,
+                    cap = StrokeCap.Round,
+                )
+            }
+        }
+        drawCircle(color = color, radius = r * 0.18f, center = Offset(cx, cy))
+    }
+}
+
+/** Custom vertical zoom slider for fullscreen mode (reference photo): a dotted track the operator
+ *  drags directly, rather than reusing the horizontal Material [Slider] rotated — a rotated
+ *  Material Slider fights its own touch-target math, while this reads/writes the drag position
+ *  directly against [valueRange]. Top of the track = max zoom, bottom = min zoom. */
+@Composable
+private fun VerticalDottedZoomSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+) {
+    var trackHeightPx by remember { mutableFloatStateOf(1f) }
+    val span = (valueRange.endInclusive - valueRange.start).coerceAtLeast(0.001f)
+    val fraction = ((value - valueRange.start) / span).coerceIn(0f, 1f)
+    val thumbFraction = 1f - fraction
+
+    Box(
+        modifier = modifier
+            .onSizeChanged { trackHeightPx = it.height.toFloat().coerceAtLeast(1f) }
+            .pointerInput(valueRange) {
+                detectVerticalDragGestures { change, _ ->
+                    val y = change.position.y.coerceIn(0f, trackHeightPx)
+                    val f = 1f - (y / trackHeightPx)
+                    onValueChange(valueRange.start + f * span)
+                }
+            },
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 10f), 0f)
+            drawLine(
+                color = Color.White.copy(alpha = 0.5f),
+                start = Offset(size.width / 2f, 0f),
+                end = Offset(size.width / 2f, size.height),
+                strokeWidth = 3f,
+                pathEffect = dashEffect,
+            )
+            val thumbRadius = size.width / 2.2f
+            val thumbY = (thumbFraction * size.height).coerceIn(thumbRadius, size.height - thumbRadius)
+            drawCircle(color = Color.White, radius = thumbRadius, center = Offset(size.width / 2f, thumbY))
+        }
+    }
+}
+
+/** Right-edge stack for fullscreen mode (reference photo): aperture glyph, draggable zoom track,
+ *  step +/- buttons, battery readout, and photo/mic buttons — everything the operator needs
+ *  without leaving fullscreen, in one column sized to fit even a short landscape screen (this
+ *  device's ~360dp usable height doesn't leave room for two independently-positioned stacks
+ *  without them overlapping — see the call site's comment). */
+@Composable
+private fun FullscreenSideControls(
+    batteryPct: Int,
+    micMuted: Boolean,
+    onToggleMic: () -> Unit,
+    onCapturePhoto: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val zoom by StreamerHolder.zoomRatio.collectAsState()
+    var range by remember { mutableStateOf(1f..5f) }
+    LaunchedEffect(Unit) { range = StreamerHolder.getZoomRange() }
+    val step = (range.endInclusive - range.start) / 20f
+
+    Column(
+        modifier = modifier.width(48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        ApertureIcon(size = 16.dp, color = Color.White.copy(alpha = 0.8f))
+        Spacer(Modifier.height(4.dp))
+        VerticalDottedZoomSlider(
+            value = zoom.coerceIn(range.start, range.endInclusive),
+            onValueChange = { StreamerHolder.setZoomRatio(it.coerceIn(range.start, range.endInclusive)) },
+            valueRange = range,
+            modifier = Modifier
+                .width(20.dp)
+                .height(90.dp),
+        )
+        Spacer(Modifier.height(4.dp))
+        FullscreenCircleButton("▲", size = 28.dp) {
+            StreamerHolder.setZoomRatio((zoom + step).coerceAtMost(range.endInclusive))
+        }
+        Spacer(Modifier.height(2.dp))
+        FullscreenCircleButton("▼", size = 28.dp) {
+            StreamerHolder.setZoomRatio((zoom - step).coerceAtLeast(range.start))
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("🔋", style = MaterialTheme.typography.labelSmall, color = Color.White)
+            Text("$batteryPct%", style = MaterialTheme.typography.labelSmall, color = Color.White)
+        }
+        Spacer(Modifier.height(8.dp))
+        FullscreenCircleButton("📷", size = 40.dp, onClick = onCapturePhoto)
+        Spacer(Modifier.height(6.dp))
+        FullscreenCircleButton(if (micMuted) "🔇" else "🎤", size = 40.dp, onClick = onToggleMic)
     }
 }
 
@@ -661,6 +1008,37 @@ private fun ZoomRow(zoom: Float) {
     }
 }
 
+/** Continuous zoom control for the live controls area, bounded by the camera's real zoom range
+ *  (falls back to 1x-5x — see [StreamerHolder.getZoomRange]) rather than the arbitrary uncapped
+ *  +/- steps [ZoomRow] uses for pre-live framing. */
+@Composable
+private fun LiveZoomSlider() {
+    val zoom by StreamerHolder.zoomRatio.collectAsState()
+    var range by remember { mutableStateOf(1f..5f) }
+    LaunchedEffect(Unit) { range = StreamerHolder.getZoomRange() }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Zoom", style = MaterialTheme.typography.bodySmall, color = LiveTheme.TextMuted)
+        Slider(
+            value = zoom.coerceIn(range.start, range.endInclusive),
+            onValueChange = { StreamerHolder.setZoomRatio(it) },
+            valueRange = range,
+            modifier = Modifier.weight(1f),
+            colors = SliderDefaults.colors(
+                thumbColor = LiveTheme.AccentInk,
+                activeTrackColor = LiveTheme.Accent,
+                inactiveTrackColor = LiveTheme.CardBorder,
+            ),
+        )
+        Text("%.1fx".format(zoom), style = MaterialTheme.typography.bodyMedium,
+            color = LiveTheme.TextPrimary, modifier = Modifier.width(40.dp))
+    }
+}
+
 @Composable
 private fun RecordingModeRow(selected: RecordingMode, enabled: Boolean, onSelect: (RecordingMode) -> Unit) {
     val labels = mapOf(
@@ -706,3 +1084,25 @@ private fun statusText(state: StreamerHolder.State): String = when (state) {
 
 private fun hasPermission(context: android.content.Context, permission: String): Boolean =
     ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+/**
+ * Grabs the currently-displayed preview frame (camera + burned-in scoreboard + logos, already
+ * composited — see [com.scorecast.app.overlay.OverlayCompositor]) via [PixelCopy] and saves it as
+ * a JPEG. Reads from the display surface, not the encoder path, so this can't destabilize the
+ * StreamPack/Camera2 streaming pipeline the way touching [StreamerHolder] directly could.
+ */
+private fun capturePhoto(context: android.content.Context, surfaceView: SurfaceView) {
+    if (surfaceView.width == 0 || surfaceView.height == 0) return
+    val bitmap = Bitmap.createBitmap(surfaceView.width, surfaceView.height, Bitmap.Config.ARGB_8888)
+    val handlerThread = HandlerThread("PhotoCapture").apply { start() }
+    val mainHandler = Handler(context.mainLooper)
+    PixelCopy.request(surfaceView, bitmap, { result ->
+        handlerThread.quitSafely()
+        if (result == PixelCopy.SUCCESS) {
+            RecordingsManager.savePhoto(context, bitmap)
+            mainHandler.post { Toast.makeText(context, "Photo saved", Toast.LENGTH_SHORT).show() }
+        } else {
+            mainHandler.post { Toast.makeText(context, "Couldn't capture photo", Toast.LENGTH_SHORT).show() }
+        }
+    }, Handler(handlerThread.looper))
+}

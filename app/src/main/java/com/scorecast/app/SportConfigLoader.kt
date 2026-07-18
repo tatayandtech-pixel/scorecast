@@ -59,6 +59,7 @@ object SportConfigLoader {
             finalSetPoints = if (o.has("finalSetPoints") && !o.isNull("finalSetPoints")) o.getInt("finalSetPoints") else null,
             winByTwo = o.optBoolean("winByTwo", false),
             pointCap = if (o.has("pointCap") && !o.isNull("pointCap")) o.getInt("pointCap") else null,
+            shotClockSeconds = if (o.has("shotClockSeconds") && !o.isNull("shotClockSeconds")) o.getInt("shotClockSeconds") else null,
         )
     }
 }

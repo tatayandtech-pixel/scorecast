@@ -66,10 +66,11 @@ fun ScoringPanel() {
     }
 
     var tickMs by remember { mutableLongStateOf(ServerTimeSync.nowMs()) }
-    LaunchedEffect(state.clockRunning) {
-        if (state.clockRunning) while (true) { delay(500); tickMs = ServerTimeSync.nowMs() }
+    LaunchedEffect(state.clockRunning, state.shotClockRunning) {
+        if (state.clockRunning || state.shotClockRunning) while (true) { delay(500); tickMs = ServerTimeSync.nowMs() }
     }
     val displaySeconds = state.clockDisplay(tickMs)
+    val shotClockSeconds = state.shotClockDisplay(tickMs)
     val resetSeconds = if (state.clockDirection == "up") 0f else config.periodLength.toFloat()
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -164,6 +165,25 @@ fun ScoringPanel() {
                 )
             }
         }
+
+        // Shot clock row — basketball only (config.shotClockSeconds), hidden for every other sport.
+        if (config.shotClockSeconds != null) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Shot Clock", style = MaterialTheme.typography.bodySmall)
+                Text(shotClockSeconds.toClockString(),
+                    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.width(52.dp), textAlign = TextAlign.Center)
+                SmallButton(if (state.shotClockRunning) "Stop" else "Start") {
+                    if (state.shotClockRunning) GameStateHolder.stopShotClock()
+                    else GameStateHolder.startShotClock()
+                }
+                SmallButton("-5") { GameStateHolder.adjustShotClock(-5f) }
+                SmallButton("+5") { GameStateHolder.adjustShotClock(5f) }
+                SmallButton("Rst") { GameStateHolder.resetShotClock(config.shotClockSeconds.toFloat()) }
+            }
+            Spacer(Modifier.height(6.dp))
+        }
     }
 }
 
@@ -247,7 +267,7 @@ private fun TeamColumn(
 
 /** Spec Appendix A "pencil = manual edit" affordance on the clock. */
 @Composable
-private fun ClockEditDialog(
+internal fun ClockEditDialog(
     initialSeconds: Float,
     onDismiss: () -> Unit,
     onConfirm: (Float) -> Unit,

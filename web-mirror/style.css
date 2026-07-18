@@ -69,7 +69,9 @@ input[type="text"] {
 input[type="text"]:focus-visible,
 #join-btn:focus-visible,
 .pill-btn:focus-visible,
-.link-btn:focus-visible {
+.link-btn:focus-visible,
+.color-swatch:focus-visible,
+.step-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -98,6 +100,8 @@ button {
   #join-btn:not(:disabled):hover { filter: brightness(1.1); }
   .pill-btn:not(:disabled):hover { border-color: var(--accent); }
   .link-btn:hover { text-decoration: underline; }
+  .color-swatch:hover { filter: brightness(1.15); }
+  .step-btn:not(:disabled):hover { border-color: var(--accent); }
 }
 
 .error {
@@ -133,15 +137,32 @@ button {
   padding: 0;
 }
 
+.period-row,
 .clock-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   background: var(--card);
   border-radius: 12px;
   padding: 10px 16px;
   margin-bottom: 16px;
 }
+
+.step-btn {
+  min-width: 44px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--pill-bg);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.step-btn:active { background: var(--accent); color: var(--accent-ink); }
+.step-btn:disabled { opacity: 0.4; }
 
 .clock-label {
   color: var(--muted);
@@ -168,10 +189,23 @@ button {
   text-align: center;
 }
 
-.team-card h2 {
+.team-name-label {
+  margin-bottom: 4px;
+  text-align: center;
+}
+
+.team-name-input {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 10px;
   font-size: 1rem;
-  margin: 0 0 8px;
-  overflow-wrap: anywhere;
+  font-weight: 600;
+  text-align: center;
+  text-transform: uppercase;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
 }
 
 .score {
@@ -179,6 +213,27 @@ button {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   margin-bottom: 12px;
+}
+
+.color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.color-swatch {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.color-swatch[data-selected="true"] {
+  border-color: var(--text);
 }
 
 .btn-row {

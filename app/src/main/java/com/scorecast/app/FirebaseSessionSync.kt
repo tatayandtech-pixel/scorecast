@@ -234,6 +234,13 @@ object FirebaseSessionSync {
         if (new.baseRemainingSeconds != old.baseRemainingSeconds) {
             updates["baseRemaining"] = new.baseRemainingSeconds.toDouble()
         }
+        if (new.shotClockRunning != old.shotClockRunning) updates["shotClockRunning"] = new.shotClockRunning
+        if (new.shotClockStartedAtMs != old.shotClockStartedAtMs) {
+            updates["shotClockStartedAt"] = if (new.shotClockRunning) ServerValue.TIMESTAMP else new.shotClockStartedAtMs
+        }
+        if (new.shotClockBaseRemainingSeconds != old.shotClockBaseRemainingSeconds) {
+            updates["shotClockBaseRemaining"] = new.shotClockBaseRemainingSeconds.toDouble()
+        }
         if (new.overlayPosition != old.overlayPosition) updates["overlayPosition"] = new.overlayPosition.name
         if (new.sport != old.sport) updates["sport"] = new.sport
         if (new.extraFields != old.extraFields) updates["extraFields"] = new.extraFields

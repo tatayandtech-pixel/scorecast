@@ -32,35 +32,56 @@
     </div>
     <p id="score-error" class="error" role="alert" hidden></p>
 
+    <div id="period-row" class="period-row" hidden>
+      <span id="period-label" class="clock-label">Period</span>
+      <button id="period-minus" class="step-btn" type="button">-</button>
+      <span id="period-value" class="period-value">1 / 4</span>
+      <button id="period-plus" class="step-btn" type="button">+</button>
+    </div>
+
     <div id="clock-row" class="clock-row" hidden>
       <span class="clock-label">Clock</span>
       <span id="clock-time" class="clock-time">0:00</span>
+      <button id="clock-toggle" class="step-btn" type="button">Start</button>
+      <button id="clock-minus" class="step-btn" type="button">-30</button>
+      <button id="clock-plus" class="step-btn" type="button">+30</button>
+    </div>
+
+    <div id="shot-clock-row" class="clock-row" hidden>
+      <span class="clock-label">Shot Clock</span>
+      <span id="shot-clock-time" class="clock-time">0:00</span>
+      <button id="shot-clock-toggle" class="step-btn" type="button">Start</button>
+      <button id="shot-clock-minus" class="step-btn" type="button">-5</button>
+      <button id="shot-clock-plus" class="step-btn" type="button">+5</button>
+      <button id="shot-clock-reset" class="step-btn" type="button">Rst</button>
     </div>
 
     <div class="teams">
       <div class="team-card">
-        <h2 id="home-name">HOME</h2>
+        <label class="team-name-label" for="home-name">Home</label>
+        <input id="home-name" class="team-name-input" type="text" maxlength="24"
+               autocomplete="off" autocapitalize="characters" spellcheck="false" />
         <div class="score" id="home-score" aria-live="polite">0</div>
         <div class="btn-row">
           <button id="home-minus" class="pill-btn" type="button">-1</button>
           <span id="home-increments" class="btn-row"></span>
         </div>
+        <div class="color-row" id="home-colors"></div>
       </div>
       <div class="team-card">
-        <h2 id="away-name">AWAY</h2>
+        <label class="team-name-label" for="away-name">Away</label>
+        <input id="away-name" class="team-name-input" type="text" maxlength="24"
+               autocomplete="off" autocapitalize="characters" spellcheck="false" />
         <div class="score" id="away-score" aria-live="polite">0</div>
         <div class="btn-row">
           <button id="away-minus" class="pill-btn" type="button">-1</button>
           <span id="away-increments" class="btn-row"></span>
         </div>
+        <div class="color-row" id="away-colors"></div>
       </div>
     </div>
 
     <div id="sets-row" class="sets-row" hidden>
-      <div class="period-readout">
-        <span id="period-label" class="clock-label">Set</span>
-        <span id="period-value" class="period-value">1 of 5</span>
-      </div>
       <div class="sets-readout">
         <span>Sets — Home: <strong id="home-sets">0</strong></span>
         <span>Away: <strong id="away-sets">0</strong></span>

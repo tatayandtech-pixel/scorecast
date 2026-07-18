@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -22,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,7 +31,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -65,7 +69,14 @@ fun MatchesScreen(
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(matches, key = { it.id }) { record ->
-                    MatchCard(record = record, onClick = { onRematch(record) })
+                    MatchCard(
+                        record = record,
+                        onClick = { onRematch(record) },
+                        onDelete = {
+                            MatchHistoryStore.delete(context, record.id)
+                            refresh++
+                        },
+                    )
                 }
             }
         }
@@ -73,31 +84,72 @@ fun MatchesScreen(
 }
 
 @Composable
-private fun MatchCard(record: MatchRecord, onClick: () -> Unit) {
+private fun MatchCard(record: MatchRecord, onClick: () -> Unit, onDelete: () -> Unit) {
     val dateFmt = remember { SimpleDateFormat("MMM d, HH:mm", Locale.US) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.padding(14.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ColorDot(record.homeColorHex)
-            Spacer(Modifier.width(6.dp))
-            Text(record.homeTeam, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                " vs ",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(record.awayTeam, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.width(6.dp))
-            ColorDot(record.awayColorHex)
-            Spacer(Modifier.weight(1f))
+            // Weighted (not a bare Spacer(weight)) so long team names truncate with an ellipsis
+            // instead of overflowing the row and pushing the date/delete button off-screen —
+            // reproduced live with real team names ("Los Angeles Lakers vs Barangay Ginebra"),
+            // which silently hid both.
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ColorDot(record.homeColorHex)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    record.homeTeam,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Text(
+                    " vs ",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    record.awayTeam,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(Modifier.width(6.dp))
+                ColorDot(record.awayColorHex)
+            }
+            Spacer(Modifier.width(8.dp))
             Text(
                 dateFmt.format(Date(record.playedAtMs)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.width(8.dp))
+            TextButton(onClick = { showDeleteConfirm = true }) {
+                Text("🗑", fontSize = 16.sp)
+            }
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete this match?") },
+            text = { Text("${record.homeTeam} vs ${record.awayTeam} will be removed from your match history. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { showDeleteConfirm = false; onDelete() }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 

@@ -23,4 +23,5 @@ data class SportConfig(
     val finalSetPoints: Int? = null,
     val winByTwo: Boolean = false,
     val pointCap: Int? = null,
+    val shotClockSeconds: Int? = null,
 )

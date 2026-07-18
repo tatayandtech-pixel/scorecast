@@ -14,6 +14,13 @@ const db = getDatabase(app);
 
 const el = (id) => document.getElementById(id);
 
+// Mirrors Android's PRESET_COLORS in ScoringPanel.kt exactly, so a color picked here or on the
+// main device reads as the same swatch on both surfaces.
+const TEAM_COLORS = [
+  "#1E40AF", "#B91C1C", "#15803D", "#7C3AED",
+  "#0F766E", "#B45309", "#374151", "#6B7280",
+];
+
 // Registering any touchstart listener is what makes WebKit/iOS Safari honor :active on tap.
 document.addEventListener("touchstart", () => {}, { passive: true });
 
@@ -33,6 +40,7 @@ let rejoinInFlight = false;
 // Android app's ServerTimeSync. Read-only here — the web mirror has no clock controls.
 let serverOffsetMs = 0;
 let clockTickHandle = null;
+let shotClockTickHandle = null;
 
 function showError(message) {
   const box = el("join-error");
@@ -157,6 +165,9 @@ function setConnectionState(state) {
 }
 
 let lastRenderedSportKey = null;
+let colorSwatchesBuilt = false;
+let homeNameFocused = false;
+let awayNameFocused = false;
 
 function renderSession(data) {
   if (!data) {
@@ -172,8 +183,18 @@ function renderSession(data) {
   const isSetsGames = sport.scoringModel === "setsGames";
 
   el("sport-name").textContent = sport.displayName;
-  el("home-name").textContent = (data.teamNames && data.teamNames.home) ?? "HOME";
-  el("away-name").textContent = (data.teamNames && data.teamNames.away) ?? "AWAY";
+  // Only overwrite the field when the operator isn't actively editing it — same on-blur-commit
+  // pattern as Android's ScoringPanel.kt TeamColumn, to avoid our own write echoing back mid-typing
+  // and clobbering characters typed after that keystroke (see the "stuck at AW" bug it fixed there).
+  if (!homeNameFocused) el("home-name").value = (data.teamNames && data.teamNames.home) ?? "HOME";
+  if (!awayNameFocused) el("away-name").value = (data.teamNames && data.teamNames.away) ?? "AWAY";
+  if (!colorSwatchesBuilt) {
+    colorSwatchesBuilt = true;
+    buildColorSwatches("home");
+    buildColorSwatches("away");
+  }
+  updateColorSelection("home", (data.teamColors && data.teamColors.home) ?? "#1E40AF");
+  updateColorSelection("away", (data.teamColors && data.teamColors.away) ?? "#B91C1C");
   el("home-score").textContent = data.homeScore ?? 0;
   el("away-score").textContent = data.awayScore ?? 0;
 
@@ -181,19 +202,36 @@ function renderSession(data) {
   if (isSetsGames) {
     el("home-sets").textContent = (data.setsWon && data.setsWon.home) ?? 0;
     el("away-sets").textContent = (data.setsWon && data.setsWon.away) ?? 0;
-    el("period-label").textContent = sport.periodLabel ?? "Set";
-    el("period-value").textContent = `${data.period ?? 1} of ${sport.periods ?? "?"}`;
   }
+
+  // Period/quarter row — shown for every sport now (all entries in sports.js carry periods +
+  // periodLabel), same stepper behavior as Android's ScoringPanel.kt Period row: clamped to
+  // [1, sport.periods].
+  const period = data.period ?? 1;
+  el("period-row").hidden = !sport.periods;
+  el("period-label").textContent = sport.periodLabel ?? "Period";
+  el("period-value").textContent = `${period} / ${sport.periods ?? "?"}`;
+  el("period-minus").disabled = period <= 1;
+  el("period-plus").disabled = sport.periods != null && period >= sport.periods;
 
   el("home-minus").disabled = (data.homeScore ?? 0) <= 0;
   el("away-minus").disabled = (data.awayScore ?? 0) <= 0;
 
-  // Clock (spec §5 anchor model) — read-only here, hidden for clockDirection "none" sports
-  // (e.g. volleyball) the same way the Android panel hides its clock row.
+  // Clock (spec §5 anchor model), hidden for clockDirection "none" sports (e.g. volleyball) the
+  // same way the Android panel hides its clock row. Now editable — same Start/Stop/±30 controls
+  // as ScoringPanel.kt, writing through the same anchor fields (startedAt/baseRemaining) Android
+  // does, so a mirror-driven clock edit is indistinguishable from a main-device one.
   const clockDir = data.clockDirection || "down";
   el("clock-row").hidden = clockDir === "none";
+  el("clock-toggle").textContent = data.clockRunning ? "Stop" : "Start";
   updateClockDisplay();
   manageClockTicking(data.clockRunning === true);
+
+  // Shot clock — basketball only (sport.shotClockSeconds), same anchor model, always counts down.
+  el("shot-clock-row").hidden = !sport.shotClockSeconds;
+  el("shot-clock-toggle").textContent = data.shotClockRunning ? "Stop" : "Start";
+  updateShotClockDisplay();
+  manageShotClockTicking(data.shotClockRunning === true);
 
   // Rebuild the +N buttons only when the sport (and therefore its increments) actually
   // changes — NOT on every score update. Every write we make immediately echoes back through
@@ -243,6 +281,127 @@ function stopClockTicking() {
   if (clockTickHandle) {
     clearInterval(clockTickHandle);
     clockTickHandle = null;
+  }
+}
+
+// Mirrors GameStateHolder.startClock/stopClock/adjustClock exactly: writes the same anchor
+// fields (clockRunning/startedAt/baseRemaining) a main device would, so a clock edit made here
+// is indistinguishable from one made on the Android app.
+function startClock() {
+  if (!latestSessionData || latestSessionData.clockRunning) return;
+  pushUpdate({ clockRunning: true, startedAt: serverTimestamp() });
+}
+
+function stopClock() {
+  if (!latestSessionData || !latestSessionData.clockRunning) return;
+  const remaining = clockDisplaySeconds(latestSessionData, Date.now() + serverOffsetMs);
+  pushUpdate({ clockRunning: false, baseRemaining: remaining, startedAt: 0 });
+}
+
+function adjustClock(deltaSeconds) {
+  if (!latestSessionData) return;
+  const current = clockDisplaySeconds(latestSessionData, Date.now() + serverOffsetMs);
+  const updates = { baseRemaining: Math.max(0, current + deltaSeconds) };
+  if (latestSessionData.clockRunning) updates.startedAt = serverTimestamp();
+  pushUpdate(updates);
+}
+
+function shotClockDisplaySeconds(data, nowMs) {
+  const base = data.shotClockBaseRemaining ?? 24;
+  if (!data.shotClockRunning) return base;
+  const elapsed = (nowMs - (data.shotClockStartedAt ?? 0)) / 1000;
+  return Math.max(0, base - elapsed);
+}
+
+function updateShotClockDisplay() {
+  if (!latestSessionData) return;
+  const seconds = shotClockDisplaySeconds(latestSessionData, Date.now() + serverOffsetMs);
+  el("shot-clock-time").textContent = formatClock(seconds);
+}
+
+function manageShotClockTicking(running) {
+  if (running) {
+    if (shotClockTickHandle) return;
+    shotClockTickHandle = setInterval(updateShotClockDisplay, 500);
+  } else {
+    stopShotClockTicking();
+  }
+}
+
+function stopShotClockTicking() {
+  if (shotClockTickHandle) {
+    clearInterval(shotClockTickHandle);
+    shotClockTickHandle = null;
+  }
+}
+
+function startShotClock() {
+  if (!latestSessionData || latestSessionData.shotClockRunning) return;
+  pushUpdate({ shotClockRunning: true, shotClockStartedAt: serverTimestamp() });
+}
+
+function stopShotClock() {
+  if (!latestSessionData || !latestSessionData.shotClockRunning) return;
+  const remaining = shotClockDisplaySeconds(latestSessionData, Date.now() + serverOffsetMs);
+  pushUpdate({ shotClockRunning: false, shotClockBaseRemaining: remaining, shotClockStartedAt: 0 });
+}
+
+function adjustShotClock(deltaSeconds) {
+  if (!latestSessionData) return;
+  const current = shotClockDisplaySeconds(latestSessionData, Date.now() + serverOffsetMs);
+  const updates = { shotClockBaseRemaining: Math.max(0, current + deltaSeconds) };
+  if (latestSessionData.shotClockRunning) updates.shotClockStartedAt = serverTimestamp();
+  pushUpdate(updates);
+}
+
+function resetShotClock() {
+  if (!latestSessionData) return;
+  const sport = Object.prototype.hasOwnProperty.call(SPORTS, latestSessionData.sport)
+    ? SPORTS[latestSessionData.sport]
+    : DEFAULT_SPORT;
+  pushUpdate({
+    shotClockRunning: false,
+    shotClockBaseRemaining: sport.shotClockSeconds ?? 24,
+    shotClockStartedAt: 0,
+  });
+}
+
+// Mirrors ScoringPanel.kt's Period stepper: clamped to [1, sport.periods], same as Android.
+function adjustPeriod(delta) {
+  if (!latestSessionData) return;
+  const sport = Object.prototype.hasOwnProperty.call(SPORTS, latestSessionData.sport)
+    ? SPORTS[latestSessionData.sport]
+    : DEFAULT_SPORT;
+  const current = latestSessionData.period ?? 1;
+  if (delta < 0) {
+    const next = Math.max(1, current - 1);
+    if (next !== current) pushUpdate({ period: next });
+  } else if (sport.periods == null || current < sport.periods) {
+    pushUpdate({ period: current + 1 });
+  }
+}
+
+// Built once and never rebuilt afterward — the same "don't destructively rebuild a DOM element
+// in direct response to its own click" lesson as renderScoreButtons applies here too, even though
+// colors don't change per-sport. Only the data-selected attribute updates on each render.
+function buildColorSwatches(side) {
+  const row = el(`${side}-colors`);
+  for (const hex of TEAM_COLORS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "color-swatch";
+    btn.style.backgroundColor = hex;
+    btn.dataset.hex = hex;
+    btn.setAttribute("aria-label", `${side === "home" ? "Home" : "Away"} color ${hex}`);
+    btn.addEventListener("click", () => pushUpdate({ [`teamColors/${side}`]: hex }));
+    row.appendChild(btn);
+  }
+}
+
+function updateColorSelection(side, selectedHex) {
+  const row = el(`${side}-colors`);
+  for (const btn of row.children) {
+    btn.dataset.selected = btn.dataset.hex.toLowerCase() === selectedHex.toLowerCase();
   }
 }
 
@@ -352,6 +511,35 @@ async function leaveSession() {
 el("home-minus").addEventListener("click", () => bumpScore("home", -1));
 el("away-minus").addEventListener("click", () => bumpScore("away", -1));
 el("leave-btn").addEventListener("click", leaveSession);
+
+el("period-minus").addEventListener("click", () => adjustPeriod(-1));
+el("period-plus").addEventListener("click", () => adjustPeriod(1));
+
+el("clock-toggle").addEventListener("click", () => {
+  if (latestSessionData && latestSessionData.clockRunning) stopClock();
+  else startClock();
+});
+el("clock-minus").addEventListener("click", () => adjustClock(-30));
+el("clock-plus").addEventListener("click", () => adjustClock(30));
+
+el("shot-clock-toggle").addEventListener("click", () => {
+  if (latestSessionData && latestSessionData.shotClockRunning) stopShotClock();
+  else startShotClock();
+});
+el("shot-clock-minus").addEventListener("click", () => adjustShotClock(-5));
+el("shot-clock-plus").addEventListener("click", () => adjustShotClock(5));
+el("shot-clock-reset").addEventListener("click", resetShotClock);
+
+el("home-name").addEventListener("focus", () => { homeNameFocused = true; });
+el("home-name").addEventListener("blur", () => {
+  homeNameFocused = false;
+  pushUpdate({ "teamNames/home": el("home-name").value });
+});
+el("away-name").addEventListener("focus", () => { awayNameFocused = true; });
+el("away-name").addEventListener("blur", () => {
+  awayNameFocused = false;
+  pushUpdate({ "teamNames/away": el("away-name").value });
+});
 
 el("join-form").addEventListener("submit", async (evt) => {
   evt.preventDefault();

@@ -58,6 +58,12 @@ object StreamerHolder {
     var currentRecordingFile: File? = null
         private set
 
+    /** Wall-clock time [State.Live] was entered, for the elapsed on-air timer in the live UI;
+     *  0L while not live. Local device time only — this is a display-only elapsed counter, not a
+     *  synced value, so raw device time (not [ServerTimeSync]) is the right source here. */
+    private val _liveStartedAtMs = MutableStateFlow(0L)
+    val liveStartedAtMs: StateFlow<Long> = _liveStartedAtMs.asStateFlow()
+
     val isStreaming: Boolean get() = _state.value is State.Live || _state.value is State.Starting
 
     @RequiresPermission(allOf = [Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO])
@@ -130,6 +136,7 @@ object StreamerHolder {
             applyFlip()
             applyPreview()
             _state.value = State.Live
+            _liveStartedAtMs.value = System.currentTimeMillis()
             Log.i(TAG, "Started: mode=$mode")
         } catch (t: Throwable) {
             fail(t)
@@ -137,9 +144,10 @@ object StreamerHolder {
     }
 
     suspend fun stop() {
-        val s = streamer ?: run { _state.value = State.Idle; return }
+        val s = streamer ?: run { _state.value = State.Idle; _liveStartedAtMs.value = 0L; return }
         streamer = null
         currentRecordingFile = null
+        _liveStartedAtMs.value = 0L
         try {
             s.stopStream()
             s.close()
@@ -164,6 +172,13 @@ object StreamerHolder {
     fun setZoomRatio(ratio: Float) {
         _zoomRatio.value = ratio.coerceAtLeast(1f)
         source()?.setZoomRatio(ratio)
+    }
+
+    /** The camera's actual supported zoom bounds, for sizing a zoom slider. Falls back to 1x-5x
+     *  if the camera hasn't reported a range yet (e.g. queried before the stream starts). */
+    suspend fun getZoomRange(): ClosedFloatingPointRange<Float> {
+        val range = source()?.getZoomRange()
+        return if (range != null) range.lower..range.upper else 1f..5f
     }
 
     private fun source(): CameraOverlayVideoSource? =

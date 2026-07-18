@@ -7,6 +7,7 @@
   "periodLabel": "Q",
   "periodLength": 600,
   "clockDirection": "down",
+  "shotClockSeconds": 24,
   "scoreIncrements": [1, 2, 3],
   "extraFields": [
     { "key": "fouls",    "label": "Fouls",    "perTeam": true, "max": null },

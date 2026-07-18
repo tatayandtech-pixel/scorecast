@@ -8,10 +8,22 @@
 // (see the file-level note above) and mirror GameStateHolder.addSetsGamesScore's exact rule in
 // app.js's bumpSetsGamesScore, not a re-derived approximation.
 export const SPORTS = Object.assign(Object.create(null), {
-  basketball:  { displayName: "Basketball",   scoringModel: "flat",     scoreIncrements: [1, 2, 3] },
-  generic:     { displayName: "Generic",      scoringModel: "flat",     scoreIncrements: [1] },
-  hockey:      { displayName: "Hockey",       scoringModel: "flat",     scoreIncrements: [1] },
-  soccer:      { displayName: "Soccer",       scoringModel: "flat",     scoreIncrements: [1] },
+  basketball:  {
+    displayName: "Basketball", scoringModel: "flat", scoreIncrements: [1, 2, 3],
+    periods: 4, periodLabel: "Q", shotClockSeconds: 24,
+  },
+  generic:     {
+    displayName: "Generic", scoringModel: "flat", scoreIncrements: [1],
+    periods: 2, periodLabel: "Period",
+  },
+  hockey:      {
+    displayName: "Hockey", scoringModel: "flat", scoreIncrements: [1],
+    periods: 3, periodLabel: "P",
+  },
+  soccer:      {
+    displayName: "Soccer", scoringModel: "flat", scoreIncrements: [1],
+    periods: 2, periodLabel: "Half",
+  },
   volleyball:  {
     displayName: "Volleyball", scoringModel: "setsGames", scoreIncrements: [1],
     periods: 5, periodLabel: "Set", bestOf: 5, pointsToWinGame: 25, finalSetPoints: 15,

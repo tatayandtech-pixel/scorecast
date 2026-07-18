@@ -56,10 +56,17 @@ object MatchHistoryStore {
         }.getOrDefault(emptyList())
     }
 
+    fun delete(context: Context, id: String) {
+        writeAll(context, list(context).filterNot { it.id == id })
+    }
+
     fun save(context: Context, record: MatchRecord) {
-        val updated = listOf(record) + list(context)
+        writeAll(context, listOf(record) + list(context))
+    }
+
+    private fun writeAll(context: Context, records: List<MatchRecord>) {
         val arr = JSONArray()
-        updated.forEach { r ->
+        records.forEach { r ->
             arr.put(JSONObject().apply {
                 put("id", r.id)
                 put("sport", r.sport)

@@ -30,12 +30,8 @@ object ScoreboardOverlay {
     // ---- scoreboard bar ----
 
     private fun drawScoreboard(canvas: Canvas, state: GameState, config: SportConfig?, frame: Size) {
-        val perTeamFields = config?.extraFields?.filter { it.perTeam } ?: emptyList()
-        val hasExtras = perTeamFields.isNotEmpty()
-
-        val baseBarH = (frame.height * 0.15f).toInt().coerceAtLeast(108)
+        val barH = (frame.height * 0.15f).toInt().coerceAtLeast(108)
         val barW = (frame.width * 0.54f).toInt().coerceAtLeast(480)
-        val barH = if (hasExtras) (baseBarH * 1.38f).toInt() else baseBarH
         val marginX = (frame.width * 0.02f).toInt()
         val marginY = (frame.height * 0.03f).toInt()
 
@@ -51,7 +47,7 @@ object ScoreboardOverlay {
 
         canvas.save()
         canvas.translate(barLeft, barTop)
-        drawBar(canvas, state, config, perTeamFields, barW, barH)
+        drawBar(canvas, state, config, barW, barH)
         canvas.restore()
     }
 
@@ -59,48 +55,52 @@ object ScoreboardOverlay {
         canvas: Canvas,
         state: GameState,
         config: SportConfig?,
-        perTeamFields: List<com.scorecast.app.ExtraFieldConfig>,
         barW: Int,
         barH: Int,
     ) {
-        val hasExtras = perTeamFields.isNotEmpty()
         val homeColor = parseColor(state.homeColorHex, Color.argb(255, 30, 64, 175))
         val awayColor = parseColor(state.awayColorHex, Color.argb(255, 185, 28, 28))
 
-        // Backdrop and dim-text tones (below) match the app's own Void/Muted brand colors —
-        // same values as ScoreCastTheme and web-mirror's DESIGN.md, not a coincidence.
+        // Backdrop and text tones match the app's own Void/Muted brand colors — same values as
+        // ScoreCastTheme and web-mirror's DESIGN.md (Card Surface / Primary Text / Muted Text,
+        // dark and light variants), not a coincidence. Toggled via the fullscreen "Edit style"
+        // button (state.scoreboardLight), a local display preference only.
         val r = barH * 0.14f
+        val barBg = if (state.scoreboardLight) Color.argb(230, 255, 255, 255) else Color.argb(220, 17, 19, 24)
+        val primaryText = if (state.scoreboardLight) Color.argb(255, 26, 26, 26) else Color.WHITE
+        val mutedText = if (state.scoreboardLight) Color.argb(220, 84, 91, 104) else Color.argb(200, 154, 160, 171)
         canvas.drawRoundRect(RectF(0f, 0f, barW.toFloat(), barH.toFloat()), r, r,
-            paint { color = Color.argb(220, 17, 19, 24) })
+            paint { color = barBg })
 
         val stripW = barH * 0.09f
         canvas.drawRoundRect(RectF(0f, 0f, stripW, barH.toFloat()), r, r, paint { color = homeColor })
         canvas.drawRoundRect(RectF(barW - stripW, 0f, barW.toFloat(), barH.toFloat()), r, r, paint { color = awayColor })
 
         val cx = barW / 2f
-        canvas.drawRect(cx - 1f, barH * 0.12f, cx + 1f, barH * 0.88f,
-            paint { color = Color.argb(80, 255, 255, 255) })
+        val dividerColor = if (state.scoreboardLight) Color.argb(60, 26, 26, 26) else Color.argb(80, 255, 255, 255)
+        canvas.drawRect(cx - 1f, barH * 0.12f, cx + 1f, barH * 0.88f, paint { color = dividerColor })
 
         val scoreSize = barH * 0.44f
         val nameSize  = barH * 0.20f
-        val infoSize  = barH * 0.16f
+        // Owner request: make the period ("Q1") and running clock more prominent — bumped up from
+        // 0.16 (was sized to also leave room for the now-removed fouls/timeouts row below it).
+        val infoSize  = barH * 0.22f
         val pad = stripW + barH * 0.06f
 
         val whiteBold = paint {
-            color = Color.WHITE
+            color = primaryText
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val dimPaint = paint {
-            color = Color.argb(200, 154, 160, 171)
+            color = mutedText
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         }
 
         // Y positions chosen so no row overlaps the one below it.
         // scoreSize cap-height ≈ 0.7 × scoreSize; digits have no descenders.
-        val nameY   = barH * if (hasExtras) 0.24f else 0.28f
-        val scoreY  = barH * if (hasExtras) 0.62f else 0.70f
-        val infoY   = barH * if (hasExtras) 0.80f else 0.90f
-        val extrasY = barH * 0.95f
+        val nameY  = barH * 0.26f
+        val scoreY = barH * 0.66f
+        val infoY  = barH * 0.90f
 
         // Names row. setsGames sports (spec §6/§7) append banked sets won, e.g. "LIONS (2)".
         val isSetsGames = config?.scoringModel == "setsGames"
@@ -125,21 +125,6 @@ object ScoreboardOverlay {
         }
         dimPaint.textSize = infoSize; dimPaint.textAlign = Paint.Align.CENTER
         canvas.drawText(center, cx, infoY, dimPaint)
-
-        // Extra-fields row (fouls, cards, etc.) when the sport defines perTeam stats.
-        if (hasExtras) {
-            val extrasSize = infoSize * 0.88f
-            val homeExtras = perTeamFields.joinToString("  ") { ef ->
-                "${ef.label.take(3)}:${state.extraFields["${ef.key}_home"] ?: 0}"
-            }
-            val awayExtras = perTeamFields.joinToString("  ") { ef ->
-                "${ef.label.take(3)}:${state.extraFields["${ef.key}_away"] ?: 0}"
-            }
-            dimPaint.textSize = extrasSize; dimPaint.textAlign = Paint.Align.LEFT
-            canvas.drawText(homeExtras, pad, extrasY, dimPaint)
-            dimPaint.textAlign = Paint.Align.RIGHT
-            canvas.drawText(awayExtras, barW - pad, extrasY, dimPaint)
-        }
     }
 
     // ---- logos ----

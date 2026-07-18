@@ -43,6 +43,39 @@ object GameStateHolder {
         copy(clockRunning = false, baseRemainingSeconds = totalSeconds, startedAtMs = 0L)
     }
 
+    fun startShotClock() = update {
+        if (shotClockRunning) this
+        else copy(shotClockRunning = true, shotClockStartedAtMs = ServerTimeSync.nowMs())
+    }
+
+    fun stopShotClock() = update {
+        if (!shotClockRunning) this
+        else copy(
+            shotClockRunning = false,
+            shotClockBaseRemainingSeconds = shotClockDisplay(ServerTimeSync.nowMs()),
+            shotClockStartedAtMs = 0L,
+        )
+    }
+
+    fun adjustShotClock(deltaSeconds: Float) = update {
+        val newBase = (shotClockDisplay(ServerTimeSync.nowMs()) + deltaSeconds).coerceAtLeast(0f)
+        copy(
+            shotClockBaseRemainingSeconds = newBase,
+            shotClockStartedAtMs = if (shotClockRunning) ServerTimeSync.nowMs() else shotClockStartedAtMs,
+        )
+    }
+
+    fun resetShotClock(totalSeconds: Float) = update {
+        copy(shotClockRunning = false, shotClockBaseRemainingSeconds = totalSeconds, shotClockStartedAtMs = 0L)
+    }
+
+    /** Returns the new value so the caller (MainActivity) can persist it via [ScoreboardStylePrefs]. */
+    fun toggleScoreboardBackground(): Boolean {
+        val newValue = !_state.value.scoreboardLight
+        update { copy(scoreboardLight = newValue) }
+        return newValue
+    }
+
     // Phase 4 — sport selection: resets period, clock, extra fields, and player lists.
     // Team names, scores, colors, custom text, and overlay position are preserved.
     fun selectSport(config: SportConfig) = update {
@@ -55,6 +88,9 @@ object GameStateHolder {
             clockRunning = false,
             startedAtMs = 0L,
             baseRemainingSeconds = initBase,
+            shotClockRunning = false,
+            shotClockStartedAtMs = 0L,
+            shotClockBaseRemainingSeconds = (config.shotClockSeconds ?: 24).toFloat(),
             extraFields = emptyMap(),
             homeScore = 0,
             awayScore = 0,
