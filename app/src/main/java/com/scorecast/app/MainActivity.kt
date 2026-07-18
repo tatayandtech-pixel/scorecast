@@ -47,8 +47,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -513,25 +511,20 @@ private fun LiveOverlay(
         val isSetsGames = config.scoringModel == "setsGames"
         var showClockEditDialog by remember { mutableStateOf(false) }
 
-        Column(Modifier.fillMaxSize().background(LiveTheme.Background)) {
+        // No background on this root Column — the video Box below is a transparent placeholder
+        // (the real camera feed is the AndroidView sibling drawn underneath in AppRoot's Box);
+        // an opaque background here would paint over it. The light theme is applied only to the
+        // two sub-sections that don't overlap the video: the status column and the bottom panel.
+        Column(Modifier.fillMaxSize()) {
             // Top strip, sized to match the video's fillMaxHeight(0.32f) in AppRoot: video pinned
             // top-left (this Box is a transparent spacer — the real video renders underneath via
             // the AndroidView sibling), status/menu bar fills the rest of the strip to its right.
             Row(Modifier.fillMaxWidth().fillMaxHeight(0.32f)) {
                 Box(Modifier.fillMaxHeight().aspectRatio(videoAspectRatio)) {
-                    Row(
-                        modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Chip(
-                            text = if (isStarting) "● Starting…" else "● LIVE",
-                            color = if (isStarting) Color.Yellow else Color.Red,
-                        )
-                        Chip(
-                            text = if (isRecording) "● Recording" else "○ Not being stored",
-                            color = if (isRecording) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    // Owner request: the small non-fullscreen preview no longer overlays the
+                    // LIVE/Recording status chips on the video itself — that status is still
+                    // shown in fullscreen mode (LiveOverlay's other branch), just not duplicated
+                    // here on the compact preview.
                     TopBarIconButton(
                         "⤢",
                         modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
@@ -664,9 +657,6 @@ private fun LiveOverlay(
                         LiveSmallButton("Rst") { GameStateHolder.resetShotClock(config.shotClockSeconds.toFloat()) }
                     }
                 }
-
-                Spacer(Modifier.height(10.dp))
-                LiveZoomSlider()
 
                 Spacer(Modifier.height(10.dp))
                 LiveBottomBar(
@@ -1005,37 +995,6 @@ private fun ZoomRow(zoom: Float) {
             modifier = Modifier.height(28.dp),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
         ) { Text("1×", fontSize = 11.sp) }
-    }
-}
-
-/** Continuous zoom control for the live controls area, bounded by the camera's real zoom range
- *  (falls back to 1x-5x — see [StreamerHolder.getZoomRange]) rather than the arbitrary uncapped
- *  +/- steps [ZoomRow] uses for pre-live framing. */
-@Composable
-private fun LiveZoomSlider() {
-    val zoom by StreamerHolder.zoomRatio.collectAsState()
-    var range by remember { mutableStateOf(1f..5f) }
-    LaunchedEffect(Unit) { range = StreamerHolder.getZoomRange() }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text("Zoom", style = MaterialTheme.typography.bodySmall, color = LiveTheme.TextMuted)
-        Slider(
-            value = zoom.coerceIn(range.start, range.endInclusive),
-            onValueChange = { StreamerHolder.setZoomRatio(it) },
-            valueRange = range,
-            modifier = Modifier.weight(1f),
-            colors = SliderDefaults.colors(
-                thumbColor = LiveTheme.AccentInk,
-                activeTrackColor = LiveTheme.Accent,
-                inactiveTrackColor = LiveTheme.CardBorder,
-            ),
-        )
-        Text("%.1fx".format(zoom), style = MaterialTheme.typography.bodyMedium,
-            color = LiveTheme.TextPrimary, modifier = Modifier.width(40.dp))
     }
 }
 
