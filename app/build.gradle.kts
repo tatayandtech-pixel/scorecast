@@ -70,4 +70,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.database)
     implementation(libs.firebase.auth)
+
+    // Facebook Login SDK (Phase 8) — Page access tokens for Graph API live video creation.
+    implementation(libs.facebook.login)
 }

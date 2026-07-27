@@ -2,4 +2,10 @@
 <resources>
     <string name="app_name">ScoreCast</string>
     <string name="notif_channel_name">Live stream</string>
+
+    <!-- Facebook Login SDK (Phase 8). App ID/Client Token are not secrets (unlike the App Secret,
+         which never appears in this codebase) and are safe to commit. -->
+    <string name="facebook_app_id">135202131318789</string>
+    <string name="facebook_client_token">879b454e6d652b478d82b7e59f914175</string>
+    <string name="facebook_login_protocol_scheme">fb135202131318789</string>
 </resources>

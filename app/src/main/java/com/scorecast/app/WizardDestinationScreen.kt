@@ -15,7 +15,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -34,16 +36,24 @@ fun WizardDestinationScreen(
     }
     val logos by LogoHolder.logos.collectAsState()
     val needsKey = target.platform != Platform.SAVE_IN_MEMORY
+    var useManual by remember(target.platform) { mutableStateOf(false) }
+    val showManual = target.platform != Platform.FACEBOOK || useManual
 
     WizardScaffold(
         step = 4,
         title = "Destination & extras",
         onBack = onBack,
         onNext = {
-            if (needsKey) RecentTargetsStore.record(context, target.platform, target.ingestUrl)
+            // Facebook's auto-created live video URL is one-time-use, so recording it into "Recent"
+            // would only offer a stale, already-expired URL for reuse next time.
+            if (needsKey && showManual) RecentTargetsStore.record(context, target.platform, target.ingestUrl)
             onFinish()
         },
-        nextEnabled = !needsKey || target.streamKey.isNotBlank(),
+        nextEnabled = when {
+            !needsKey -> true
+            !showManual -> target.ingestUrl.isNotBlank() && target.ingestUrl != Platform.FACEBOOK.defaultIngestUrl
+            else -> target.streamKey.isNotBlank()
+        },
         nextLabel = "Finish",
     ) {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
@@ -52,6 +62,12 @@ fun WizardDestinationScreen(
                     "Recording only — no ingest server needed. The stream saves to this device.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (!showManual) {
+                FacebookDestinationScreen(
+                    target = target,
+                    onTargetChange = onTargetChange,
+                    onUseManual = { useManual = true },
                 )
             } else {
                 Text("${target.platform.displayName} ingest", style = MaterialTheme.typography.titleSmall)

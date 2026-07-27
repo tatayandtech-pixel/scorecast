@@ -21,6 +21,9 @@ googleServices = "4.5.0"
 # metadata, which our pinned Kotlin 2.1.0 compiler can't read ("incompatible version of Kotlin").
 # Bump this only alongside a deliberate Kotlin upgrade, not on its own.
 firebaseBom = "33.7.0"
+# Phase 8: raw Facebook Login SDK (not Firebase Auth's Facebook provider) — Page access tokens
+# are needed for Graph API live video creation, which an identity-link login can't provide.
+facebookLogin = "18.0.3"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -43,6 +46,7 @@ firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "fir
 # "-ktx" suffixed modules (firebase-database-ktx, firebase-auth-ktx) no longer exist.
 firebase-database = { module = "com.google.firebase:firebase-database" }
 firebase-auth = { module = "com.google.firebase:firebase-auth" }
+facebook-login = { module = "com.facebook.android:facebook-login", version.ref = "facebookLogin" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
