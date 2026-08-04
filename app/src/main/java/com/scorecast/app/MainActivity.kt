@@ -524,12 +524,11 @@ private fun LiveOverlay(
                     // Owner request: the small non-fullscreen preview no longer overlays the
                     // LIVE/Recording status chips on the video itself — that status is still
                     // shown in fullscreen mode (LiveOverlay's other branch), just not duplicated
-                    // here on the compact preview.
-                    TopBarIconButton(
-                        "⤢",
-                        modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
-                        onClick = onToggleFullscreen,
-                    )
+                    // here on the compact preview. The "⤢" expand button used to live here too,
+                    // but this Box sits exactly on top of the real embedded camera SurfaceView
+                    // (same bounds), which has its own touch listener for pinch-zoom and was
+                    // swallowing the tap before Compose's button ever saw it — it's now inline
+                    // in the REMOTE SCORING row's icon cluster instead (see below).
                 }
 
                 Column(
@@ -582,6 +581,12 @@ private fun LiveOverlay(
                         Text("🔗", fontSize = 16.sp, modifier = Modifier.clickable(onClick = shareAction))
                         Text("⋮", color = LiveTheme.TextPrimary, fontSize = 16.sp,
                             modifier = Modifier.clickable { showMenuStub = true })
+                        // In-line with the other icons in this row rather than floated as its
+                        // own overlay box — a floated box here collided with this row's own
+                        // icons (same top-right corner), so a tap meant for "⤢" could land on
+                        // "⋮" or the link icon instead depending on exact finger position.
+                        Text("⤢", color = LiveTheme.TextPrimary, fontSize = 16.sp,
+                            modifier = Modifier.clickable(onClick = onToggleFullscreen))
                     }
 
                     Row(
