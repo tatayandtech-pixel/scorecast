@@ -774,7 +774,7 @@ private fun LiveOverlay(
                     Spacer(Modifier.width(16.dp))
                     Column {
                         Text(
-                            "Android: scan this code. iPhone/laptop: use the web mirror with the code below.",
+                            "Android: scan this code. iPhone/laptop: go to scorecast-app-625c0.web.app and enter the code below.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Spacer(Modifier.height(8.dp))
