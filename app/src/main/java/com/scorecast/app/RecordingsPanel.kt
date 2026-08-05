@@ -41,7 +41,7 @@ fun RecordingsPanel() {
             Text("Recordings", style = MaterialTheme.typography.titleSmall)
             OutlinedButton(
                 onClick = { refresh++ },
-                modifier = Modifier.height(28.dp),
+                modifier = Modifier.height(44.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                 shape = RoundedCornerShape(4.dp),
             ) { Text("Refresh", fontSize = 11.sp) }
@@ -93,7 +93,7 @@ private fun RecordingRow(file: File, onPlay: () -> Unit, onShare: () -> Unit, on
 private fun SmallRecordingButton(label: String, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
-        modifier = Modifier.height(26.dp),
+        modifier = Modifier.height(44.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
         shape = RoundedCornerShape(4.dp),
     ) { Text(label, fontSize = 10.sp) }

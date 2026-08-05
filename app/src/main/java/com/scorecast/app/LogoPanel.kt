@@ -63,7 +63,7 @@ private fun LogoSlotSection(title: String, slot: LogoSlot, logos: List<LogoEntry
         OutlinedButton(
             onClick = { picker.launch("image/*") },
             enabled = logos.size < MAX_LOGOS_PER_SLOT,
-            modifier = Modifier.height(28.dp),
+            modifier = Modifier.height(44.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp),
             shape = RoundedCornerShape(4.dp),
         ) { Text("+ Add", fontSize = 11.sp) }
@@ -105,7 +105,7 @@ private fun LogoRow(logo: LogoEntry, onRemove: () -> Unit) {
         Text("Logo ${logo.id.take(6)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
         OutlinedButton(
             onClick = onRemove,
-            modifier = Modifier.height(24.dp),
+            modifier = Modifier.height(44.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
             shape = RoundedCornerShape(4.dp),
         ) { Text("Remove", fontSize = 9.sp) }

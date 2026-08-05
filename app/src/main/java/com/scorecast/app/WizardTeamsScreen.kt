@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -109,7 +111,13 @@ private fun TeamEditor(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // 44dp tap target (PRODUCT.md's touch-target floor) wrapping a smaller 22dp visual dot,
+        // plus horizontalScroll, since 8 full-size 44dp swatches side by side would overflow
+        // this column's width.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
             PRESET_COLORS.forEach { hex ->
                 val argb = try {
                     android.graphics.Color.parseColor(hex)
@@ -119,12 +127,18 @@ private fun TeamEditor(
                 val selected = colorHex.equals(hex, ignoreCase = true)
                 Box(
                     modifier = Modifier
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .background(Color(argb))
-                        .then(if (selected) Modifier.border(2.dp, Color.White, CircleShape) else Modifier)
-                        .clickable { onColorChange(hex) }
-                )
+                        .size(44.dp)
+                        .clickable { onColorChange(hex) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(Color(argb))
+                            .then(if (selected) Modifier.border(2.dp, Color.White, CircleShape) else Modifier),
+                    )
+                }
             }
         }
     }

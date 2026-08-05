@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -86,8 +87,9 @@ fun LiveCountdownSection(
     Column(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("COUNTDOWN", color = LiveTheme.TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Text("✎", color = LiveTheme.TextMuted, fontSize = 13.sp,
-                modifier = Modifier.clickable(onClick = onEdit))
+            Box(modifier = Modifier.size(44.dp).clickable(onClick = onEdit), contentAlignment = Alignment.Center) {
+                Text("✎", color = LiveTheme.TextMuted, fontSize = 13.sp)
+            }
             Text(
                 displaySeconds.toClockString(),
                 color = LiveTheme.TextPrimary,
@@ -97,7 +99,7 @@ fun LiveCountdownSection(
             Spacer(Modifier.weight(1f))
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
                     .background(LiveTheme.Accent)
                     .clickable(onClick = onToggleRunning),
@@ -186,8 +188,9 @@ fun LiveTeamCard(
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(teamName, color = LiveTheme.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Text("✎", color = LiveTheme.TextMuted, fontSize = 13.sp,
-                    modifier = Modifier.clickable { editingName = true })
+                Box(modifier = Modifier.size(44.dp).clickable { editingName = true }, contentAlignment = Alignment.Center) {
+                    Text("✎", color = LiveTheme.TextMuted, fontSize = 13.sp)
+                }
                 if (setsWon != null) {
                     Spacer(Modifier.width(4.dp))
                     Text("· Sets: $setsWon", color = LiveTheme.TextMuted, fontSize = 12.sp)
@@ -200,7 +203,7 @@ fun LiveTeamCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
                     .background(LiveTheme.AccentInk)
                     .clickable { onScoreChange(-1) },
@@ -223,7 +226,7 @@ fun LiveTeamCard(
                 scoreIncrements.forEach { inc ->
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(44.dp)
                             .clip(CircleShape)
                             .background(LiveTheme.Accent)
                             .clickable { onScoreChange(inc) },
@@ -235,18 +238,30 @@ fun LiveTeamCard(
 
         Spacer(Modifier.height(10.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
             PRESET_COLORS.forEach { hex ->
                 val argb = try { android.graphics.Color.parseColor(hex) } catch (_: Exception) { android.graphics.Color.GRAY }
                 val selected = colorHex.equals(hex, ignoreCase = true)
+                // 44dp tap target (PRODUCT.md's touch-target floor) wrapping a smaller 16dp visual
+                // dot, rather than growing the dot itself — eight full-size 44dp swatches side by
+                // side would overflow a team card's width, hence the horizontalScroll above too.
                 Box(
                     modifier = Modifier
-                        .size(16.dp)
-                        .clip(CircleShape)
-                        .background(Color(argb))
-                        .then(if (selected) Modifier.border(2.dp, LiveTheme.TextPrimary, CircleShape) else Modifier)
+                        .size(44.dp)
                         .clickable { onColorChange(hex) },
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clip(CircleShape)
+                            .background(Color(argb))
+                            .then(if (selected) Modifier.border(2.dp, LiveTheme.TextPrimary, CircleShape) else Modifier),
+                    )
+                }
             }
         }
     }
@@ -283,7 +298,9 @@ fun LiveBottomBar(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.clickable(onClick = onStop),
+            modifier = Modifier
+                .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
+                .clickable(onClick = onStop),
         ) {
             Text("⏹", color = LiveTheme.DangerText, fontSize = 14.sp)
             Text("Stop", color = LiveTheme.TextPrimary, fontSize = 12.sp)
@@ -307,16 +324,18 @@ fun LiveBottomBar(
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Box(
-                modifier = Modifier.clip(CircleShape).background(LiveTheme.CardBackground)
-                    .clickable(onClick = onPeriodMinus).padding(8.dp),
+                modifier = Modifier.size(44.dp).clip(CircleShape).background(LiveTheme.CardBackground)
+                    .clickable(onClick = onPeriodMinus),
+                contentAlignment = Alignment.Center,
             ) { Text("−", color = LiveTheme.TextPrimary, fontSize = 12.sp) }
             Text(
                 "$period / $maxPeriod  ${periodLabel.uppercase()}/PERIOD",
                 color = LiveTheme.TextPrimary, fontSize = 11.sp, textAlign = TextAlign.Center,
             )
             Box(
-                modifier = Modifier.clip(CircleShape).background(LiveTheme.CardBackground)
-                    .clickable(onClick = onPeriodPlus).padding(8.dp),
+                modifier = Modifier.size(44.dp).clip(CircleShape).background(LiveTheme.CardBackground)
+                    .clickable(onClick = onPeriodPlus),
+                contentAlignment = Alignment.Center,
             ) { Text("+", color = LiveTheme.TextPrimary, fontSize = 12.sp) }
         }
 

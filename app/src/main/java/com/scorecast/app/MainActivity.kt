@@ -261,7 +261,7 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
         // re-running the factory lambda.
         AndroidView(
             modifier = if (videoConstrained) {
-                Modifier.fillMaxHeight(0.32f).aspectRatio(StreamConfig.RESOLUTION.width / StreamConfig.RESOLUTION.height.toFloat()).align(Alignment.TopStart)
+                Modifier.fillMaxHeight(0.38f).aspectRatio(StreamConfig.RESOLUTION.width / StreamConfig.RESOLUTION.height.toFloat()).align(Alignment.TopStart)
             } else {
                 Modifier.fillMaxSize()
             },
@@ -516,10 +516,13 @@ private fun LiveOverlay(
         // an opaque background here would paint over it. The light theme is applied only to the
         // two sub-sections that don't overlap the video: the status column and the bottom panel.
         Column(Modifier.fillMaxSize()) {
-            // Top strip, sized to match the video's fillMaxHeight(0.32f) in AppRoot: video pinned
+            // Top strip, sized to match the video's fillMaxHeight(0.38f) in AppRoot: video pinned
             // top-left (this Box is a transparent spacer — the real video renders underneath via
             // the AndroidView sibling), status/menu bar fills the rest of the strip to its right.
-            Row(Modifier.fillMaxWidth().fillMaxHeight(0.32f)) {
+            // Bumped from 0.32f to make room for the REMOTE SCORING row's now-accessible (44dp+)
+            // Switch and icon targets — verify on-device if adjusting this again, this strip's
+            // height has previously collided with the Countdown/Shot Clock row below it.
+            Row(Modifier.fillMaxWidth().fillMaxHeight(0.38f)) {
                 Box(Modifier.fillMaxHeight().aspectRatio(videoAspectRatio)) {
                     // Owner request: the small non-fullscreen preview no longer overlays the
                     // LIVE/Recording status chips on the video itself — that status is still
@@ -565,28 +568,40 @@ private fun LiveOverlay(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text("REMOTE SCORING", color = LiveTheme.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Switch(checked = session != null, onCheckedChange = { showPairDialog = true },
-                            modifier = Modifier.height(20.dp))
+                        // No explicit height here — Switch's own default touch target (~48dp,
+                        // via minimumInteractiveComponentSize) was previously being overridden
+                        // down to 20dp, shrinking the real tap target well below the 44dp floor.
+                        Switch(checked = session != null, onCheckedChange = { showPairDialog = true })
                         Text(
                             if (mirrorConnected) "● Referee online" else "● Referee offline",
                             color = if (mirrorConnected) ScoreCastStatusOk() else LiveTheme.TextMuted,
                             fontSize = 11.sp,
                         )
                         Spacer(Modifier.weight(1f))
-                        Text(if (micMuted) "🔇" else "🎤", fontSize = 16.sp, modifier = Modifier.clickable {
+                        // Each icon gets a 44dp hit box (PRODUCT.md's touch-target floor) around
+                        // its small glyph, rather than the glyph's own bare text bounds — these
+                        // four sit close together, so an undersized target on any one of them
+                        // raises the odds of hitting a neighbor instead.
+                        Box(modifier = Modifier.size(44.dp).clickable {
                             micMuted = !micMuted
                             (context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager)
                                 ?.isMicrophoneMute = micMuted
-                        })
-                        Text("🔗", fontSize = 16.sp, modifier = Modifier.clickable(onClick = shareAction))
-                        Text("⋮", color = LiveTheme.TextPrimary, fontSize = 16.sp,
-                            modifier = Modifier.clickable { showMenuStub = true })
+                        }, contentAlignment = Alignment.Center) {
+                            Text(if (micMuted) "🔇" else "🎤", fontSize = 16.sp)
+                        }
+                        Box(modifier = Modifier.size(44.dp).clickable(onClick = shareAction), contentAlignment = Alignment.Center) {
+                            Text("🔗", fontSize = 16.sp)
+                        }
+                        Box(modifier = Modifier.size(44.dp).clickable { showMenuStub = true }, contentAlignment = Alignment.Center) {
+                            Text("⋮", color = LiveTheme.TextPrimary, fontSize = 16.sp)
+                        }
                         // In-line with the other icons in this row rather than floated as its
                         // own overlay box — a floated box here collided with this row's own
                         // icons (same top-right corner), so a tap meant for "⤢" could land on
                         // "⋮" or the link icon instead depending on exact finger position.
-                        Text("⤢", color = LiveTheme.TextPrimary, fontSize = 16.sp,
-                            modifier = Modifier.clickable(onClick = onToggleFullscreen))
+                        Box(modifier = Modifier.size(44.dp).clickable(onClick = onToggleFullscreen), contentAlignment = Alignment.Center) {
+                            Text("⤢", color = LiveTheme.TextPrimary, fontSize = 16.sp)
+                        }
                     }
 
                     Row(
@@ -806,7 +821,7 @@ private fun TopBarIconButton(label: String, modifier: Modifier = Modifier, onCli
     // a sliver despite the visible background looking full-size.
     Box(
         modifier = modifier
-            .size(40.dp)
+            .size(44.dp)
             .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -922,7 +937,7 @@ private fun FullscreenSideControls(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         ApertureIcon(size = 16.dp, color = Color.White.copy(alpha = 0.8f))
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         VerticalDottedZoomSlider(
             value = zoom.coerceIn(range.start, range.endInclusive),
             onValueChange = { StreamerHolder.setZoomRatio(it.coerceIn(range.start, range.endInclusive)) },
@@ -931,23 +946,26 @@ private fun FullscreenSideControls(
                 .width(20.dp)
                 .height(90.dp),
         )
-        Spacer(Modifier.height(4.dp))
-        FullscreenCircleButton("▲", size = 28.dp) {
+        Spacer(Modifier.height(2.dp))
+        // 44dp (PRODUCT.md's touch-target floor) — was 28dp; this column's height budget is tight
+        // on short landscape screens (see the class doc above), so surrounding spacers were trimmed
+        // to compensate. Verify on-device after any further change here.
+        FullscreenCircleButton("▲", size = 44.dp) {
             StreamerHolder.setZoomRatio((zoom + step).coerceAtMost(range.endInclusive))
         }
-        Spacer(Modifier.height(2.dp))
-        FullscreenCircleButton("▼", size = 28.dp) {
+        Spacer(Modifier.height(0.dp))
+        FullscreenCircleButton("▼", size = 44.dp) {
             StreamerHolder.setZoomRatio((zoom - step).coerceAtLeast(range.start))
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("🔋", style = MaterialTheme.typography.labelSmall, color = Color.White)
             Text("$batteryPct%", style = MaterialTheme.typography.labelSmall, color = Color.White)
         }
-        Spacer(Modifier.height(8.dp))
-        FullscreenCircleButton("📷", size = 40.dp, onClick = onCapturePhoto)
-        Spacer(Modifier.height(6.dp))
-        FullscreenCircleButton(if (micMuted) "🔇" else "🎤", size = 40.dp, onClick = onToggleMic)
+        Spacer(Modifier.height(4.dp))
+        FullscreenCircleButton("📷", size = 44.dp, onClick = onCapturePhoto)
+        Spacer(Modifier.height(4.dp))
+        FullscreenCircleButton(if (micMuted) "🔇" else "🎤", size = 44.dp, onClick = onToggleMic)
     }
 }
 
@@ -995,19 +1013,19 @@ private fun ZoomRow(zoom: Float) {
         Text("Zoom", style = MaterialTheme.typography.bodySmall)
         OutlinedButton(
             onClick = { StreamerHolder.setZoomRatio((zoom - 0.5f).coerceAtLeast(1f)) },
-            modifier = Modifier.height(28.dp),
+            modifier = Modifier.height(44.dp),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
         ) { Text("−", fontSize = 14.sp) }
         Text("%.1fx".format(zoom), style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.width(40.dp))
         OutlinedButton(
             onClick = { StreamerHolder.setZoomRatio(zoom + 0.5f) },
-            modifier = Modifier.height(28.dp),
+            modifier = Modifier.height(44.dp),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
         ) { Text("+", fontSize = 14.sp) }
         OutlinedButton(
             onClick = { StreamerHolder.setZoomRatio(1f) },
-            modifier = Modifier.height(28.dp),
+            modifier = Modifier.height(44.dp),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
         ) { Text("1×", fontSize = 11.sp) }
     }
@@ -1027,7 +1045,7 @@ private fun RecordingModeRow(selected: RecordingMode, enabled: Boolean, onSelect
             OutlinedButton(
                 onClick = { onSelect(mode) },
                 enabled = enabled,
-                modifier = Modifier.height(28.dp),
+                modifier = Modifier.height(44.dp),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                 colors = if (selected == mode) ButtonDefaults.outlinedButtonColors(
                     containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)

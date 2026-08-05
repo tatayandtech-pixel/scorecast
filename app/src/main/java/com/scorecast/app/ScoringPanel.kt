@@ -245,8 +245,13 @@ private fun TeamColumn(
                 SmallButton("+$inc") { onScoreChange(inc) }
             }
         }
-        // Color presets.
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Color presets. 44dp tap target (PRODUCT.md's touch-target floor) wrapping a smaller
+        // 18dp visual dot, plus horizontalScroll, since 8 full-size 44dp swatches side by side
+        // would overflow this panel's width.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
             PRESET_COLORS.forEach { hex ->
                 val argb = try {
                     android.graphics.Color.parseColor(hex)
@@ -254,12 +259,18 @@ private fun TeamColumn(
                 val selected = colorHex.equals(hex, ignoreCase = true)
                 Box(
                     modifier = Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(Color(argb))
-                        .then(if (selected) Modifier.border(2.dp, Color.White, CircleShape) else Modifier)
-                        .clickable { onColorChange(hex) }
-                )
+                        .size(44.dp)
+                        .clickable { onColorChange(hex) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(Color(argb))
+                            .then(if (selected) Modifier.border(2.dp, Color.White, CircleShape) else Modifier),
+                    )
+                }
             }
         }
     }
@@ -313,7 +324,7 @@ internal fun ClockEditDialog(
 internal fun SmallButton(label: String, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
-        modifier = Modifier.height(28.dp),
+        modifier = Modifier.height(44.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
         shape = RoundedCornerShape(4.dp),
     ) {
