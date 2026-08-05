@@ -36,6 +36,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -118,13 +121,13 @@ fun ScoringPanel() {
         Row(verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Period", style = MaterialTheme.typography.bodySmall)
-            SmallButton("-") {
+            SmallButton("-", contentDescription = "Previous period") {
                 GameStateHolder.update { copy(period = (period - 1).coerceAtLeast(1)) }
             }
             Text("${state.periodLabel}${state.period}",
                 style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold,
                 modifier = Modifier.width(40.dp), textAlign = TextAlign.Center)
-            SmallButton("+") {
+            SmallButton("+", contentDescription = "Next period") {
                 if (state.period < config.periods)
                     GameStateHolder.update { copy(period = period + 1) }
             }
@@ -143,7 +146,7 @@ fun ScoringPanel() {
                 Text(displaySeconds.toClockString(),
                     style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold,
                     modifier = Modifier.width(52.dp), textAlign = TextAlign.Center)
-                SmallButton("✎") { showEditDialog = true }
+                SmallButton("✎", contentDescription = "Edit clock") { showEditDialog = true }
                 SmallButton(if (state.clockRunning) "Stop" else "Start") {
                     if (state.clockRunning) GameStateHolder.stopClock()
                     else GameStateHolder.startClock()
@@ -260,7 +263,11 @@ private fun TeamColumn(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .clickable { onColorChange(hex) },
+                        .clickable { onColorChange(hex) }
+                        .semantics {
+                            contentDescription = "$label color $hex"
+                            this.selected = selected
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(
@@ -321,10 +328,15 @@ internal fun ClockEditDialog(
 }
 
 @Composable
-internal fun SmallButton(label: String, onClick: () -> Unit) {
+internal fun SmallButton(label: String, contentDescription: String? = null, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
-        modifier = Modifier.height(44.dp),
+        modifier = Modifier
+            .height(44.dp)
+            .then(
+                if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription }
+                else Modifier
+            ),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
         shape = RoundedCornerShape(4.dp),
     ) {

@@ -38,6 +38,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -87,7 +90,11 @@ fun LiveCountdownSection(
     Column(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("COUNTDOWN", color = LiveTheme.TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Box(modifier = Modifier.size(44.dp).clickable(onClick = onEdit), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.size(44.dp).clickable(onClick = onEdit)
+                    .semantics { contentDescription = "Edit countdown clock" },
+                contentAlignment = Alignment.Center,
+            ) {
                 Text("✎", color = LiveTheme.TextMuted, fontSize = 13.sp)
             }
             Text(
@@ -102,7 +109,8 @@ fun LiveCountdownSection(
                     .size(44.dp)
                     .clip(CircleShape)
                     .background(LiveTheme.Accent)
-                    .clickable(onClick = onToggleRunning),
+                    .clickable(onClick = onToggleRunning)
+                    .semantics { contentDescription = if (clockRunning) "Pause clock" else "Start clock" },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(if (clockRunning) "❚❚" else "▶", color = LiveTheme.AccentInk, fontSize = 14.sp)
@@ -146,7 +154,7 @@ fun LiveTeamCard(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
             .background(LiveTheme.CardBackground)
-            .padding(14.dp),
+            .padding(8.dp),
         verticalArrangement = Arrangement.Center,
     ) {
         var editingName by remember { mutableStateOf(false) }
@@ -188,7 +196,11 @@ fun LiveTeamCard(
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(teamName, color = LiveTheme.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Box(modifier = Modifier.size(44.dp).clickable { editingName = true }, contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier.size(44.dp).clickable { editingName = true }
+                        .semantics { contentDescription = "Edit $teamName name" },
+                    contentAlignment = Alignment.Center,
+                ) {
                     Text("✎", color = LiveTheme.TextMuted, fontSize = 13.sp)
                 }
                 if (setsWon != null) {
@@ -198,7 +210,7 @@ fun LiveTeamCard(
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(4.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -206,7 +218,8 @@ fun LiveTeamCard(
                     .size(44.dp)
                     .clip(CircleShape)
                     .background(LiveTheme.AccentInk)
-                    .clickable { onScoreChange(-1) },
+                    .clickable { onScoreChange(-1) }
+                    .semantics { contentDescription = "Decrease $teamName score by 1" },
                 contentAlignment = Alignment.Center,
             ) { Text("−", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
 
@@ -236,7 +249,7 @@ fun LiveTeamCard(
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(4.dp))
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -251,7 +264,11 @@ fun LiveTeamCard(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .clickable { onColorChange(hex) },
+                        .clickable { onColorChange(hex) }
+                        .semantics {
+                            contentDescription = "$teamName color $hex"
+                            this.selected = selected
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(
@@ -325,7 +342,8 @@ fun LiveBottomBar(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Box(
                 modifier = Modifier.size(44.dp).clip(CircleShape).background(LiveTheme.CardBackground)
-                    .clickable(onClick = onPeriodMinus),
+                    .clickable(onClick = onPeriodMinus)
+                    .semantics { contentDescription = "Previous $periodLabel" },
                 contentAlignment = Alignment.Center,
             ) { Text("−", color = LiveTheme.TextPrimary, fontSize = 12.sp) }
             Text(
@@ -334,7 +352,8 @@ fun LiveBottomBar(
             )
             Box(
                 modifier = Modifier.size(44.dp).clip(CircleShape).background(LiveTheme.CardBackground)
-                    .clickable(onClick = onPeriodPlus),
+                    .clickable(onClick = onPeriodPlus)
+                    .semantics { contentDescription = "Next $periodLabel" },
                 contentAlignment = Alignment.Center,
             ) { Text("+", color = LiveTheme.TextPrimary, fontSize = 12.sp) }
         }

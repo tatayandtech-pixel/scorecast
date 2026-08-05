@@ -28,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
@@ -56,7 +58,10 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("ScoreCast", style = MaterialTheme.typography.headlineMedium)
-            IconButton(onClick = { /* settings — not yet built */ }) {
+            IconButton(
+                onClick = { /* settings — not yet built */ },
+                modifier = Modifier.semantics { contentDescription = "Settings" },
+            ) {
                 Text("⚙", fontSize = 22.sp)
             }
         }

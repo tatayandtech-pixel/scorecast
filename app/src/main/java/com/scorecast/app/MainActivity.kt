@@ -77,6 +77,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -461,11 +463,13 @@ private fun LiveOverlay(
             }
             TopBarIconButton(
                 "⤢",
+                contentDescription = "Exit fullscreen",
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
                 onClick = onToggleFullscreen,
             )
             FullscreenCircleButton(
                 if (gameState.scoreboardLight) "☀" else "🌙",
+                contentDescription = if (gameState.scoreboardLight) "Switch scoreboard to dark background" else "Switch scoreboard to light background",
                 size = 44.dp,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 16.dp, end = 100.dp),
             ) {
@@ -582,24 +586,39 @@ private fun LiveOverlay(
                         // its small glyph, rather than the glyph's own bare text bounds — these
                         // four sit close together, so an undersized target on any one of them
                         // raises the odds of hitting a neighbor instead.
-                        Box(modifier = Modifier.size(44.dp).clickable {
-                            micMuted = !micMuted
-                            (context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager)
-                                ?.isMicrophoneMute = micMuted
-                        }, contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier.size(44.dp).clickable {
+                                micMuted = !micMuted
+                                (context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager)
+                                    ?.isMicrophoneMute = micMuted
+                            }.semantics { contentDescription = if (micMuted) "Unmute microphone" else "Mute microphone" },
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Text(if (micMuted) "🔇" else "🎤", fontSize = 16.sp)
                         }
-                        Box(modifier = Modifier.size(44.dp).clickable(onClick = shareAction), contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier.size(44.dp).clickable(onClick = shareAction)
+                                .semantics { contentDescription = "Share" },
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Text("🔗", fontSize = 16.sp)
                         }
-                        Box(modifier = Modifier.size(44.dp).clickable { showMenuStub = true }, contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier.size(44.dp).clickable { showMenuStub = true }
+                                .semantics { contentDescription = "More options" },
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Text("⋮", color = LiveTheme.TextPrimary, fontSize = 16.sp)
                         }
                         // In-line with the other icons in this row rather than floated as its
                         // own overlay box — a floated box here collided with this row's own
                         // icons (same top-right corner), so a tap meant for "⤢" could land on
                         // "⋮" or the link icon instead depending on exact finger position.
-                        Box(modifier = Modifier.size(44.dp).clickable(onClick = onToggleFullscreen), contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier.size(44.dp).clickable(onClick = onToggleFullscreen)
+                                .semantics { contentDescription = "Enter fullscreen" },
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Text("⤢", color = LiveTheme.TextPrimary, fontSize = 16.sp)
                         }
                     }
@@ -815,7 +834,12 @@ private fun Chip(text: String, color: Color) {
 }
 
 @Composable
-private fun TopBarIconButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun TopBarIconButton(
+    label: String,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
     // Fixed-size Box instead of sizing off the glyph's own intrinsic bounds — some glyphs (e.g.
     // "⋮") measure far narrower than they look, which was shrinking the real tap target down to
     // a sliver despite the visible background looking full-size.
@@ -823,7 +847,8 @@ private fun TopBarIconButton(label: String, modifier: Modifier = Modifier, onCli
         modifier = modifier
             .size(44.dp)
             .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
         Text(text = label, style = MaterialTheme.typography.titleMedium)
@@ -833,6 +858,7 @@ private fun TopBarIconButton(label: String, modifier: Modifier = Modifier, onCli
 @Composable
 private fun FullscreenCircleButton(
     label: String,
+    contentDescription: String,
     modifier: Modifier = Modifier,
     size: androidx.compose.ui.unit.Dp = 48.dp,
     onClick: () -> Unit,
@@ -841,7 +867,8 @@ private fun FullscreenCircleButton(
         modifier = modifier
             .size(size)
             .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
         Text(text = label, style = MaterialTheme.typography.labelMedium)
@@ -950,11 +977,11 @@ private fun FullscreenSideControls(
         // 44dp (PRODUCT.md's touch-target floor) — was 28dp; this column's height budget is tight
         // on short landscape screens (see the class doc above), so surrounding spacers were trimmed
         // to compensate. Verify on-device after any further change here.
-        FullscreenCircleButton("▲", size = 44.dp) {
+        FullscreenCircleButton("▲", contentDescription = "Zoom in", size = 44.dp) {
             StreamerHolder.setZoomRatio((zoom + step).coerceAtMost(range.endInclusive))
         }
         Spacer(Modifier.height(0.dp))
-        FullscreenCircleButton("▼", size = 44.dp) {
+        FullscreenCircleButton("▼", contentDescription = "Zoom out", size = 44.dp) {
             StreamerHolder.setZoomRatio((zoom - step).coerceAtLeast(range.start))
         }
         Spacer(Modifier.height(4.dp))
@@ -963,9 +990,14 @@ private fun FullscreenSideControls(
             Text("$batteryPct%", style = MaterialTheme.typography.labelSmall, color = Color.White)
         }
         Spacer(Modifier.height(4.dp))
-        FullscreenCircleButton("📷", size = 44.dp, onClick = onCapturePhoto)
+        FullscreenCircleButton("📷", contentDescription = "Take photo", size = 44.dp, onClick = onCapturePhoto)
         Spacer(Modifier.height(4.dp))
-        FullscreenCircleButton(if (micMuted) "🔇" else "🎤", size = 44.dp, onClick = onToggleMic)
+        FullscreenCircleButton(
+            if (micMuted) "🔇" else "🎤",
+            contentDescription = if (micMuted) "Unmute microphone" else "Mute microphone",
+            size = 44.dp,
+            onClick = onToggleMic,
+        )
     }
 }
 
