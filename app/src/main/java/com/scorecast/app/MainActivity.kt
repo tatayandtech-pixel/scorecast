@@ -227,6 +227,10 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
     var surfaceViewRef by remember { mutableStateOf<SurfaceView?>(null) }
 
     val isLive = streamerState is StreamerHolder.State.Live || streamerState is StreamerHolder.State.Starting
+    // A dead stream must not yank the operator back to the setup panel mid-match — the game is
+    // still being played and they're still scoring. Keep the live UI mounted for Error too and
+    // surface the failure in place (LiveErrorBanner); only Idle returns to setup.
+    val showLiveUi = isLive || streamerState is StreamerHolder.State.Error
 
     val permissions = buildList {
         add(Manifest.permission.CAMERA)
@@ -259,7 +263,7 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
     // has real room; the fullscreen toggle temporarily restores fillMaxSize. Either way this is
     // just the AndroidView's Modifier changing — the SurfaceView itself is never recreated (see
     // the factory comment below), so this can't reintroduce the camera-session-recreation bug.
-    val videoConstrained = isLive && !fullscreenVideo
+    val videoConstrained = showLiveUi && !fullscreenVideo
 
     Box(Modifier.fillMaxSize()) {
         // Camera always fills the screen so the SurfaceView is never recreated.
@@ -294,7 +298,7 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
             update = { sv -> (sv.tag as FloatArray)[0] = zoom },
         )
 
-        if (!isLive) {
+        if (!showLiveUi) {
             // ── SETUP mode: right-side panel with Scoring and Stream tabs ──────
             SetupPanel(
                 modifier = Modifier
@@ -320,6 +324,8 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
                 fullscreenVideo    = fullscreenVideo,
                 onToggleFullscreen = { fullscreenVideo = !fullscreenVideo },
                 streamerState      = streamerState,
+                onRetryStream      = onGoLive,
+                onDismissError     = { StreamerHolder.acknowledgeError() },
                 onCapturePhoto     = {
                     // The preview SurfaceView is rendered at whatever size it's displayed at —
                     // in the compact 1/4-height layout that's a low-res sliver, not a real photo.
@@ -429,6 +435,8 @@ private fun LiveOverlay(
     fullscreenVideo: Boolean,
     onToggleFullscreen: () -> Unit,
     streamerState: StreamerHolder.State,
+    onRetryStream: () -> Unit,
+    onDismissError: () -> Unit,
     onCapturePhoto: () -> Unit,
     onStop: () -> Unit,
 ) {
@@ -437,7 +445,6 @@ private fun LiveOverlay(
     var showEndMatchConfirm by remember { mutableStateOf(false) }
     var showMenuStub by remember { mutableStateOf(false) }
     var micMuted by remember { mutableStateOf(false) }
-    val isStarting = streamerState is StreamerHolder.State.Starting
     val isRecording = remember(streamerState) { StreamerHolder.currentRecordingFile != null }
     val batteryPct = rememberBatteryPercent()
 
@@ -456,10 +463,17 @@ private fun LiveOverlay(
                 modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Chip(
-                    text = if (isStarting) "● Starting…" else "● LIVE",
-                    color = if (isStarting) Color.Yellow else Color.Red,
-                )
+                // Error keeps the live UI mounted now, so this chip can no longer assume
+                // "not starting" means "on air" — it would have read "● LIVE" over a dead stream.
+                // Live/Starting keep the pure-red/yellow tally-light convention (DESIGN.md);
+                // off-air is not a tally state, so it uses the theme's own colours.
+                val (liveChipText, liveChipColor) = when (streamerState) {
+                    StreamerHolder.State.Live -> "● LIVE" to Color.Red
+                    StreamerHolder.State.Starting -> "● Starting…" to Color.Yellow
+                    is StreamerHolder.State.Error -> "○ Off air" to MaterialTheme.colorScheme.error
+                    StreamerHolder.State.Idle -> "○ Off air" to MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Chip(text = liveChipText, color = liveChipColor)
                 Chip(
                     text = if (isRecording) "● Recording" else "○ Not being stored",
                     color = if (isRecording) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -627,39 +641,50 @@ private fun LiveOverlay(
                         }
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(20.dp),
-                    ) {
-                        LiveCountdownSection(
-                            displaySeconds = displaySeconds,
-                            clockRunning = state.clockRunning,
-                            onToggleRunning = {
-                                if (state.clockRunning) GameStateHolder.stopClock() else GameStateHolder.startClock()
-                            },
-                            onEdit = { showClockEditDialog = true },
-                            onAdjust = { GameStateHolder.adjustClock(it) },
-                            onReset = { GameStateHolder.resetClock(resetSeconds) },
-                            modifier = Modifier.weight(1f),
-                        )
-                        // Shot clock — basketball only (config.shotClockSeconds) — now lives beside
-                        // the Countdown instead of stacked below the team cards, since this row has
-                        // plenty of width to spare.
-                        if (config.shotClockSeconds != null) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text("SHOT CLOCK", color = LiveTheme.TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    Text(shotClockSeconds.toClockString(), color = LiveTheme.TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                }
-                                Spacer(Modifier.height(4.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    LiveSmallButton(if (state.shotClockRunning) "Stop" else "Start") {
-                                        if (state.shotClockRunning) GameStateHolder.stopShotClock() else GameStateHolder.startShotClock()
+                    // Countdown is meaningless for clockDirection "none" sports (volleyball,
+                    // badminton, squash, table tennis) — clockDisplay() returns 0f for them, so
+                    // without this guard the operator got a permanent "COUNTDOWN 0:00" with a live
+                    // play button and adjusters that could never do anything. ScoringPanel.kt
+                    // already guarded this the same way; the live view never did.
+                    val showCountdown = state.clockDirection != "none"
+                    val shotClockConfigSeconds = config.shotClockSeconds
+                    if (showCountdown || shotClockConfigSeconds != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(20.dp),
+                        ) {
+                            if (showCountdown) {
+                                LiveCountdownSection(
+                                    displaySeconds = displaySeconds,
+                                    clockRunning = state.clockRunning,
+                                    onToggleRunning = {
+                                        if (state.clockRunning) GameStateHolder.stopClock() else GameStateHolder.startClock()
+                                    },
+                                    onEdit = { showClockEditDialog = true },
+                                    onAdjust = { GameStateHolder.adjustClock(it) },
+                                    onReset = { GameStateHolder.resetClock(resetSeconds) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            // Shot clock — basketball only (config.shotClockSeconds) — now lives beside
+                            // the Countdown instead of stacked below the team cards, since this row has
+                            // plenty of width to spare.
+                            if (shotClockConfigSeconds != null) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("SHOT CLOCK", color = LiveTheme.TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text(shotClockSeconds.toClockString(), color = LiveTheme.TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                                     }
-                                    LiveSmallButton("-5") { GameStateHolder.adjustShotClock(-5f) }
-                                    LiveSmallButton("+5") { GameStateHolder.adjustShotClock(5f) }
-                                    LiveSmallButton("Rst") { GameStateHolder.resetShotClock(config.shotClockSeconds.toFloat()) }
+                                    Spacer(Modifier.height(4.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        LiveSmallButton(if (state.shotClockRunning) "Stop" else "Start") {
+                                            if (state.shotClockRunning) GameStateHolder.stopShotClock() else GameStateHolder.startShotClock()
+                                        }
+                                        LiveSmallButton("-5") { GameStateHolder.adjustShotClock(-5f) }
+                                        LiveSmallButton("+5") { GameStateHolder.adjustShotClock(5f) }
+                                        LiveSmallButton("Rst") { GameStateHolder.resetShotClock(shotClockConfigSeconds.toFloat()) }
+                                    }
                                 }
                             }
                         }
@@ -678,6 +703,14 @@ private fun LiveOverlay(
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
+                (streamerState as? StreamerHolder.State.Error)?.let { errorState ->
+                    LiveErrorBanner(
+                        message = errorState.message,
+                        onRetry = onRetryStream,
+                        onDismiss = onDismissError,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -714,6 +747,7 @@ private fun LiveOverlay(
 
                 LiveBottomBar(
                     onStop = { showEndMatchConfirm = true },
+                    streamerState = streamerState,
                     isRecording = isRecording,
                     periodLabel = state.periodLabel,
                     period = state.period,
@@ -819,7 +853,14 @@ private fun LiveOverlay(
             title = { Text("End this match?") },
             text = { Text("This stops the stream/recording and saves the result to Matches.") },
             confirmButton = {
-                TextButton(onClick = { showEndMatchConfirm = false; onStop() }) { Text("End match") }
+                // Destructive confirm renders in the error role, not the default accent: as plain
+                // TextButtons this and Cancel were the same Signal Lavender at the same weight, so
+                // under time pressure the only differentiator was left-vs-right position.
+                // DESIGN.md's Cross-Platform Mapping already assigns "End match" to the error role.
+                TextButton(
+                    onClick = { showEndMatchConfirm = false; onStop() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("End match") }
             },
             dismissButton = {
                 TextButton(onClick = { showEndMatchConfirm = false }) { Text("Cancel") }

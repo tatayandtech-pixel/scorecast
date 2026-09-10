@@ -1,5 +1,6 @@
 package com.scorecast.app
 
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
@@ -7,6 +8,7 @@ import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
 import com.google.firebase.database.ValueEventListener
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,6 +33,8 @@ import kotlinx.coroutines.launch
  */
 object FirebaseSessionSync {
 
+    private const val TAG = "FirebaseSessionSync"
+
     enum class Role { MAIN, MIRROR }
 
     sealed interface ConnectionState {
@@ -48,7 +52,15 @@ object FirebaseSessionSync {
     private val _mirrorConnected = MutableStateFlow(false)
     val mirrorConnected: StateFlow<Boolean> = _mirrorConnected.asStateFlow()
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // SupervisorJob protects sibling jobs from each other, but NOT a job from its own uncaught
+    // throw — without this handler an exception anywhere in observeLocalChanges()'s collect{}
+    // would end the push job permanently, with no crash and no log: local state would keep
+    // updating on-screen while nothing reached Firebase again for the life of the session.
+    // (Matches the 2026-07-16 silent-sync-stop report; see observeLocalChanges below.)
+    private val logErrors = CoroutineExceptionHandler { _, t ->
+        Log.e(TAG, "sync coroutine died", t)
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + logErrors)
     private var pushJob: Job? = null
     private var sessionRef: DatabaseReference? = null
     private var valueListener: ValueEventListener? = null
@@ -194,12 +206,20 @@ object FirebaseSessionSync {
         pushJob = scope.launch {
             GameStateHolder.state.drop(1).collect { newState ->
                 val old = previousState
-                previousState = newState
                 if (newState === lastAppliedRemote) {
+                    // Our own echo coming back: it's already the server's value, so there is
+                    // nothing to push, but it does become the new baseline to diff against.
                     lastAppliedRemote = null
+                    previousState = newState
                     return@collect
                 }
-                if (old != null) pushDiff(ref, old, newState)
+                // Advance the baseline only once the push actually succeeded. Doing it up front
+                // meant a throwing pushDiff silently dropped that delta forever, since the next
+                // emission would diff against a state that was never sent. Keeping the old
+                // baseline on failure makes the next local change re-send the missed delta too.
+                runCatching { if (old != null) pushDiff(ref, old, newState) }
+                    .onSuccess { previousState = newState }
+                    .onFailure { Log.e(TAG, "pushDiff failed; keeping baseline so the delta retries", it) }
             }
         }
     }
@@ -256,8 +276,14 @@ object FirebaseSessionSync {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val remote = snapshot.toGameState() ?: return
-                lastAppliedRemote = remote
-                GameStateHolder.applyRemote(remote)
+                // scoreboardLight is a local-only display preference, deliberately never written
+                // to Firebase (see GameState.kt) — toGameState() can't populate it, so it always
+                // comes back as the class default (false/dark). Applying it wholesale would silently
+                // flip the burned-in overlay back to dark on every remote update, including the
+                // echo of this device's own score writes. Carry the current local value forward.
+                val withLocalPrefs = remote.copy(scoreboardLight = GameStateHolder.state.value.scoreboardLight)
+                lastAppliedRemote = withLocalPrefs
+                GameStateHolder.applyRemote(withLocalPrefs)
             }
             override fun onCancelled(error: DatabaseError) {
                 _connectionState.value = ConnectionState.Failed(error.message)

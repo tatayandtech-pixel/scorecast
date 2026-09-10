@@ -50,6 +50,91 @@ internal val PRESET_COLORS = listOf(
     "#0F766E", "#B45309", "#374151", "#6B7280",
 )
 
+private fun parsePresetColor(hex: String): Int =
+    try { android.graphics.Color.parseColor(hex) } catch (_: Exception) { android.graphics.Color.GRAY }
+
+/**
+ * Team-colour picker for the *scoring* surfaces, collapsed by default to a single current-colour
+ * chip that expands the eight presets inline on tap (owner decision, 2026-09-09).
+ *
+ * Why collapse: team colour is a once-per-match setup decision, but eight always-visible saturated
+ * 44dp swatches per team were sixteen of the ~36 controls on the live scoring screen — the densest
+ * and least time-critical group on the screen the operator uses while also filming, and the highest-
+ * chroma objects in an otherwise restrained palette, out-competing the score itself for attention.
+ *
+ * It stays expanded until the chip is tapped again; picking a colour deliberately does NOT
+ * auto-collapse, so a mis-pick can be corrected without reopening. Expansion is inline (it pushes
+ * siblings along the row) rather than a popup — this codebase treats modals as a last resort.
+ *
+ * NOT used by [WizardTeamsScreen], where choosing the colour is the screen's whole purpose and
+ * hiding the swatches behind a chip would bury the primary task.
+ *
+ * @param ringColor stroke on the selected swatch and the collapsed chip. Must contrast with the
+ *   surface behind it — passing [Color.White] here on a light theme makes selection invisible,
+ *   which is exactly the bug this parameter exists to stop being re-introduced per call site.
+ */
+@Composable
+internal fun TeamColorPicker(
+    label: String,
+    colorHex: String,
+    onColorChange: (String) -> Unit,
+    ringColor: Color,
+    caretColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = modifier.horizontalScroll(rememberScrollState()),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        // 44dp tap target (PRODUCT.md's floor) wrapping a smaller visual dot, so a row of these
+        // still fits a team card's width.
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clickable { expanded = !expanded }
+                .semantics {
+                    contentDescription =
+                        if (expanded) "Hide $label colour options" else "Change $label colour"
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(Color(parsePresetColor(colorHex)))
+                    .border(2.dp, ringColor, CircleShape),
+            )
+        }
+        Text(if (expanded) "▾" else "▸", color = caretColor, fontSize = 10.sp)
+        if (expanded) {
+            PRESET_COLORS.forEach { hex ->
+                val selected = colorHex.equals(hex, ignoreCase = true)
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clickable { onColorChange(hex) }
+                        .semantics {
+                            contentDescription = "$label colour $hex"
+                            this.selected = selected
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(Color(parsePresetColor(hex)))
+                            .then(if (selected) Modifier.border(2.dp, ringColor, CircleShape) else Modifier),
+                    )
+                }
+            }
+        }
+    }
+}
+
 private val FALLBACK_CONFIG = SportConfig(
     sport = "basketball",
     displayName = "Basketball",
@@ -248,38 +333,15 @@ private fun TeamColumn(
                 SmallButton("+$inc") { onScoreChange(inc) }
             }
         }
-        // Color presets. 44dp tap target (PRODUCT.md's touch-target floor) wrapping a smaller
-        // 18dp visual dot, plus horizontalScroll, since 8 full-size 44dp swatches side by side
-        // would overflow this panel's width.
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-        ) {
-            PRESET_COLORS.forEach { hex ->
-                val argb = try {
-                    android.graphics.Color.parseColor(hex)
-                } catch (_: Exception) { android.graphics.Color.GRAY }
-                val selected = colorHex.equals(hex, ignoreCase = true)
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clickable { onColorChange(hex) }
-                        .semantics {
-                            contentDescription = "$label color $hex"
-                            this.selected = selected
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(18.dp)
-                            .clip(CircleShape)
-                            .background(Color(argb))
-                            .then(if (selected) Modifier.border(2.dp, Color.White, CircleShape) else Modifier),
-                    )
-                }
-            }
-        }
+        // Was: eight always-visible swatches with a Color.White selection ring, which is invisible
+        // on the light theme's white surface. Both fixed by the shared picker above.
+        TeamColorPicker(
+            label = label,
+            colorHex = colorHex,
+            onColorChange = onColorChange,
+            ringColor = MaterialTheme.colorScheme.onSurface,
+            caretColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

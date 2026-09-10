@@ -6,7 +6,7 @@ colors:
   surface-card: "#1c1f26"
   text-primary: "#f2f2f2"
   text-muted: "#9aa0ab"
-  border-subtle: "#3a3f4a"
+  border-subtle: "#6e7480"
   pill-surface: "#262a33"
   signal-lavender: "#b39ddb"
   signal-lavender-ink: "#1a1a1a"
@@ -17,7 +17,7 @@ colors:
   surface-card-light: "#ffffff"
   text-primary-light: "#1a1a1a"
   text-muted-light: "#545b68"
-  border-subtle-light: "#d0d3d9"
+  border-subtle-light: "#80838a"
   pill-surface-light: "#eceef2"
   signal-lavender-light: "#6c4fa8"
   signal-lavender-ink-light: "#ffffff"
@@ -140,7 +140,7 @@ A near-monochrome dark console with a single soft accent and three status colors
 - **Card Surface** (#1c1f26 dark / #ffffff light): The one layering tone above Void — team cards, the clock row, the sets row, text inputs.
 - **Primary Text** (#f2f2f2 dark / #1a1a1a light): Scores, team names, the page title.
 - **Muted Text** (#9aa0ab dark / #545b68 light): Labels, hints, the sport name, secondary copy.
-- **Subtle Border** (#3a3f4a dark / #d0d3d9 light): Input and pill-button borders — visible enough to define a tap target, not enough to compete with content.
+- **Subtle Border** (#6e7480 dark / #80838a light): Input and pill-button borders — visible enough to define a tap target, not enough to compete with content. Raised from #3a3f4a/#d0d3d9 on 2026-09-09: those measured 1.56:1 (dark) and 1.50:1 (light) against Card Surface, so every button and input on both platforms had an effectively invisible boundary, failing WCAG 1.4.11's 3:1 minimum for non-text UI components. The current values measure 3.51:1 dark and 3.80:1 light against Card Surface, and clear 3:1 against Void and Pill Surface too.
 - **Pill Surface** (#262a33 dark / #eceef2 light): The score-pill background specifically — one step off Card Surface, not a reuse of it (the two only happened to look similar before this was tokenized).
 
 ### Named Rules

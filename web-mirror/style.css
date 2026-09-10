@@ -9,11 +9,19 @@
   --danger: #e57373;
   --ok: #66bb6a;
   --pending: #ffb74d;
-  --border: #3a3f4a;
+  --border: #6e7480;
   --pill-bg: #262a33;
 }
 
 * { box-sizing: border-box; }
+
+/* The UA stylesheet's [hidden]{display:none} loses to any author-origin `display`, so every row
+   below that sets `display: flex` (.period-row, .clock-row) silently ignored its own `hidden`
+   attribute — app.js's period-row/clock-row/shot-clock-row toggles were inert, which is why the
+   Clock row showed 0:00 on clockDirection:"none" sports and the Shot Clock row appeared on every
+   sport. #sets-row was never affected only because .sets-row sets no `display`. Keep this rule
+   above the layout rules; !important is what makes it independent of source order. */
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -215,12 +223,53 @@ button {
   margin-bottom: 12px;
 }
 
+/* Team colour is a once-per-match setup decision, but eight always-visible saturated swatches per
+   team were 16 of the ~36 controls on this screen — the densest, least time-critical group, and the
+   highest-chroma objects in an otherwise restrained palette, out-competing the score for attention.
+   Collapsed to a single current-colour chip that expands the presets inline (owner decision
+   2026-09-09). Expanded state persists until the chip is tapped again, so a mis-pick can be
+   corrected without reopening. */
+.color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.color-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 8px;
+  background: none;
+  border: none;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.color-toggle-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid var(--text);
+  background: var(--pill-bg);
+}
+
 .color-row {
+  /* Full-basis so expanding drops the swatches onto their own line under the chip, pushing the
+     card's content down rather than overlaying it. */
+  flex: 1 1 100%;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
-  margin-top: 12px;
 }
 
 .color-swatch {
@@ -296,7 +345,7 @@ button {
     --danger: #c62828;
     --ok: #256029;
     --pending: #8f5300;
-    --border: #d0d3d9;
+    --border: #80838a;
     --pill-bg: #eceef2;
   }
 }

@@ -144,7 +144,21 @@ object StreamerHolder {
     }
 
     suspend fun stop() {
-        val s = streamer ?: run { _state.value = State.Idle; _liveStartedAtMs.value = 0L; return }
+        teardown()
+        _state.value = State.Idle
+    }
+
+    /** Clears the operator's acknowledged [State.Error] once they've seen it. */
+    fun acknowledgeError() {
+        if (_state.value is State.Error) _state.value = State.Idle
+    }
+
+    /** Releases the streamer and clears live/recording bookkeeping WITHOUT touching [state]. Split
+     *  out of [stop] so [fail] can tear down and still leave State.Error standing: fail() used to
+     *  set Error and then call stop(), whose `finally` immediately overwrote it with Idle, so the
+     *  cause of a mid-broadcast failure was always discarded before any UI could read it. */
+    private suspend fun teardown() {
+        val s = streamer ?: run { _liveStartedAtMs.value = 0L; return }
         streamer = null
         currentRecordingFile = null
         _liveStartedAtMs.value = 0L
@@ -155,7 +169,6 @@ object StreamerHolder {
             Log.w(TAG, "stop() error", t)
         } finally {
             s.release()
-            _state.value = State.Idle
         }
     }
 
@@ -189,8 +202,14 @@ object StreamerHolder {
 
     private fun fail(t: Throwable) {
         Log.e(TAG, "Stream error", t)
-        _state.value = State.Error(t.message ?: t.javaClass.simpleName)
-        scope.launch { runCatching { stop() } }
+        val message = t.message ?: t.javaClass.simpleName
+        scope.launch {
+            // Tear down first, then publish Error last, so nothing in the teardown path can
+            // clobber it. State.Error is terminal until the operator acknowledges it via
+            // acknowledgeError() or starts/ends a new stream.
+            runCatching { teardown() }
+            _state.value = State.Error(message)
+        }
     }
 
     private fun buildRtmpUrl(ingestUrl: String, streamKey: String): String {

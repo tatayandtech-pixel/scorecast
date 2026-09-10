@@ -123,6 +123,9 @@ function detachListeners() {
   unsubscribeConnected = null;
   unsubscribeOffset = null;
   stopClockTicking();
+  // Was missing: leaving a basketball session with the shot clock running left its 500ms interval
+  // firing for the life of the tab.
+  stopShotClockTicking();
 }
 
 // Fires when the session listener is denied — most commonly because a dropped connection
@@ -393,16 +396,34 @@ function buildColorSwatches(side) {
     btn.style.backgroundColor = hex;
     btn.dataset.hex = hex;
     btn.setAttribute("aria-label", `${side === "home" ? "Home" : "Away"} color ${hex}`);
+    btn.setAttribute("aria-pressed", "false");
     btn.addEventListener("click", () => pushUpdate({ [`teamColors/${side}`]: hex }));
     row.appendChild(btn);
   }
+
+  // Collapse/expand the preset row. Only toggles `hidden` and aria-expanded — it never rebuilds
+  // a node in response to a click on that same node, per the iOS Safari runaway-loop lesson above.
+  // Picking a colour deliberately does NOT auto-collapse, so a mis-pick can be corrected in place.
+  const toggle = el(`${side}-color-toggle`);
+  toggle.addEventListener("click", () => {
+    const nowExpanded = row.hidden;
+    row.hidden = !nowExpanded;
+    toggle.setAttribute("aria-expanded", String(nowExpanded));
+    toggle.querySelector(".color-toggle-caret").textContent = nowExpanded ? "▾" : "▸";
+  });
 }
 
 function updateColorSelection(side, selectedHex) {
   const row = el(`${side}-colors`);
   for (const btn of row.children) {
-    btn.dataset.selected = btn.dataset.hex.toLowerCase() === selectedHex.toLowerCase();
+    const isSelected = btn.dataset.hex.toLowerCase() === selectedHex.toLowerCase();
+    btn.dataset.selected = isSelected;
+    // Visual selection was already a border rather than colour alone (good); this makes the same
+    // state available to assistive tech, which previously saw eight identical plain buttons.
+    btn.setAttribute("aria-pressed", String(isSelected));
   }
+  // Keep the collapsed chip showing the team's actual current colour.
+  el(`${side}-color-current`).style.backgroundColor = selectedHex;
 }
 
 function renderScoreButtons(sport) {

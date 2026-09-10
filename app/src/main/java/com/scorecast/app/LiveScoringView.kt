@@ -56,6 +56,44 @@ import kotlinx.coroutines.delay
  * [MirrorScoringScreen]) — this file's composables are new and independent so those two surfaces
  * are untouched.
  */
+/**
+ * Shown in place when the stream dies mid-match. The live UI deliberately stays up behind it: the
+ * game is still being played and the operator is still scoring, so tearing the whole screen back
+ * to the pre-live setup panel (which is what happened before, silently, with the cause discarded)
+ * loses their context at the worst possible moment.
+ */
+@Composable
+fun LiveErrorBanner(
+    message: String,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(LiveTheme.CardBackground)
+            .border(1.dp, LiveTheme.DangerText, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("⚠", color = LiveTheme.DangerText, fontSize = 16.sp)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "Stream stopped",
+                color = LiveTheme.DangerText,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(message, color = LiveTheme.TextMuted, fontSize = 11.sp, maxLines = 2)
+        }
+        LiveSmallButton("Retry", onRetry)
+        LiveSmallButton("Dismiss", onDismiss)
+    }
+}
+
 object LiveTheme {
     val Background = Color(0xFFF7F7F3)
     val CardBackground = Color(0xFFFFFFFF)
@@ -65,6 +103,12 @@ object LiveTheme {
     val TextPrimary = Color(0xFF1A1A1A)
     val TextMuted = Color(0xFF6B6B6B)
     val DangerText = Color(0xFFD32F2F)
+
+    /** "Starting…" on the live-status dot. Deliberately DESIGN.md's own light-mode status-pending
+     *  value rather than a new invented amber — this screen's palette is a scoped exception, but a
+     *  status colour should still come from the brand. Amber has to go this dark on a light surface
+     *  to clear 4.5:1 (5.61:1 here); the dark-mode #ffb74d would fail badly. */
+    val PendingText = Color(0xFF8F5300)
 }
 
 private fun formatElapsed(totalSeconds: Long): String {
@@ -132,7 +176,12 @@ fun LiveSmallButton(label: String, onClick: () -> Unit) {
             .clip(RoundedCornerShape(8.dp))
             .background(LiveTheme.CardBackground)
             .clickable(onClick = onClick)
+            // 12sp text + 6dp padding left these at ~29dp, well under the 44dp floor PRODUCT.md
+            // sets — and they're the live clock/shot-clock controls, tapped one-handed mid-match.
+            // defaultMinSize (not .size) so the label still governs width when it's wider.
+            .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
             .padding(horizontal = 10.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(label, color = LiveTheme.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
@@ -251,42 +300,20 @@ fun LiveTeamCard(
 
         Spacer(Modifier.height(4.dp))
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-        ) {
-            PRESET_COLORS.forEach { hex ->
-                val argb = try { android.graphics.Color.parseColor(hex) } catch (_: Exception) { android.graphics.Color.GRAY }
-                val selected = colorHex.equals(hex, ignoreCase = true)
-                // 44dp tap target (PRODUCT.md's touch-target floor) wrapping a smaller 16dp visual
-                // dot, rather than growing the dot itself — eight full-size 44dp swatches side by
-                // side would overflow a team card's width, hence the horizontalScroll above too.
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clickable { onColorChange(hex) }
-                        .semantics {
-                            contentDescription = "$teamName color $hex"
-                            this.selected = selected
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(16.dp)
-                            .clip(CircleShape)
-                            .background(Color(argb))
-                            .then(if (selected) Modifier.border(2.dp, LiveTheme.TextPrimary, CircleShape) else Modifier),
-                    )
-                }
-            }
-        }
+        TeamColorPicker(
+            label = teamName,
+            colorHex = colorHex,
+            onColorChange = onColorChange,
+            ringColor = LiveTheme.TextPrimary,
+            caretColor = LiveTheme.TextMuted,
+        )
     }
 }
 
 @Composable
 fun LiveBottomBar(
     onStop: () -> Unit,
+    streamerState: StreamerHolder.State,
     isRecording: Boolean,
     periodLabel: String,
     period: Int,
@@ -324,9 +351,22 @@ fun LiveBottomBar(
         }
 
         Column {
+            // Broadcast state must be readable at a glance and must never assert "live" when it
+            // isn't: this dot used to be hardcoded red regardless of state, so Starting, Live and
+            // Idle-after-a-failure were pixel-identical. Colour is always paired with a word, per
+            // DESIGN.md's Status Indicator rule.
+            val (statusColor, statusLabel) = when (streamerState) {
+                StreamerHolder.State.Live -> LiveTheme.DangerText to "LIVE"
+                StreamerHolder.State.Starting -> LiveTheme.PendingText to "Starting…"
+                is StreamerHolder.State.Error -> LiveTheme.DangerText to "Off air"
+                StreamerHolder.State.Idle -> LiveTheme.TextMuted to "Off air"
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("●", color = LiveTheme.DangerText, fontSize = 10.sp)
-                Text(formatElapsed(elapsedSeconds), color = LiveTheme.TextPrimary, fontSize = 12.sp)
+                Text("●", color = statusColor, fontSize = 10.sp)
+                Text(statusLabel, color = statusColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                if (streamerState is StreamerHolder.State.Live) {
+                    Text(formatElapsed(elapsedSeconds), color = LiveTheme.TextPrimary, fontSize = 12.sp)
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("●", color = if (isRecording) LiveTheme.DangerText else LiveTheme.TextMuted, fontSize = 8.sp)

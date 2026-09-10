@@ -43,7 +43,7 @@ private val ScoreCastDarkColorScheme = darkColorScheme(
     surfaceContainer = Color(0xFF1C1F26),
     surfaceContainerHigh = Color(0xFF1C1F26),
     surfaceContainerHighest = Color(0xFF1C1F26),
-    outline = Color(0xFF3A3F4A),
+    outline = Color(0xFF6E7480),
     error = Color(0xFFE57373),
     onError = Color(0xFF1A1A1A),
 )
@@ -62,7 +62,7 @@ private val ScoreCastLightColorScheme = lightColorScheme(
     surfaceContainer = Color(0xFFFFFFFF),
     surfaceContainerHigh = Color(0xFFFFFFFF),
     surfaceContainerHighest = Color(0xFFFFFFFF),
-    outline = Color(0xFFD0D3D9),
+    outline = Color(0xFF80838A),
     error = Color(0xFFC62828),
     onError = Color(0xFFFFFFFF),
 )

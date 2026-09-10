@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -149,7 +150,13 @@ private fun MatchCard(record: MatchRecord, onClick: () -> Unit, onDelete: () -> 
             title = { Text("Delete this match?") },
             text = { Text("${record.homeTeam} vs ${record.awayTeam} will be removed from your match history. This can't be undone.") },
             confirmButton = {
-                TextButton(onClick = { showDeleteConfirm = false; onDelete() }) { Text("Delete") }
+                // Destructive confirm renders in the error role, not the default accent: as plain
+                // TextButtons this and Cancel were the same Signal Lavender at the same weight, so
+                // under time pressure the only differentiator was left-vs-right position.
+                TextButton(
+                    onClick = { showDeleteConfirm = false; onDelete() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Delete") }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }

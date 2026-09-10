@@ -36,7 +36,12 @@ fun WizardPlatformScreen(
                 columns = GridCells.Fixed(2),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.height(280.dp),
+                // Was a fixed 280.dp, which clipped the third row on every phone size: 5 platforms
+                // in 2 columns at aspectRatio 1.6 needs ~311dp at 360dp wide and ~359dp at 411dp,
+                // so "Save in memory" — the only record-only path — sat below the fold of a nested
+                // scroll container with no scroll affordance. weight(1f) inside WizardScaffold's
+                // already-bounded content column lets the grid take the real available height.
+                modifier = Modifier.weight(1f),
             ) {
                 items(Platform.entries.toList(), key = { it.name }) { platform ->
                     val selected = target.platform == platform

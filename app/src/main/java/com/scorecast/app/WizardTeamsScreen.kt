@@ -32,6 +32,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.scorecast.app.overlay.ScoreboardOverlay
 
@@ -125,10 +128,20 @@ private fun TeamEditor(
                     android.graphics.Color.GRAY
                 }
                 val selected = colorHex.equals(hex, ignoreCase = true)
+                // Deliberately NOT the collapsible TeamColorPicker used on the scoring screens:
+                // picking the colour is this step's whole purpose, so hiding the swatches behind a
+                // chip would bury the primary task. It does take that component's two fixes: an
+                // onSurface ring (Color.White was invisible against the light theme's #F4F4F6
+                // background, and the ring is the only selection cue) and the selection semantics
+                // this call site was missing entirely.
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .clickable { onColorChange(hex) },
+                        .clickable { onColorChange(hex) }
+                        .semantics {
+                            contentDescription = "Team colour $hex"
+                            this.selected = selected
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(
@@ -136,7 +149,13 @@ private fun TeamEditor(
                             .size(22.dp)
                             .clip(CircleShape)
                             .background(Color(argb))
-                            .then(if (selected) Modifier.border(2.dp, Color.White, CircleShape) else Modifier),
+                            .then(
+                                if (selected) {
+                                    Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                } else {
+                                    Modifier
+                                }
+                            ),
                     )
                 }
             }
