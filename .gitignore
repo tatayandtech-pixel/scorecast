@@ -11,3 +11,8 @@ local.properties
 /app/build/
 /.firebase/
 /screenshots/
+
+# JVM crash dumps from an out-of-memory Gradle/Kotlin daemon — regenerable artifacts.
+hs_err_pid*.log
+replay_pid*.log
+/.vscode/
