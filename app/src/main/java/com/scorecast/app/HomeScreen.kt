@@ -40,6 +40,7 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     onCreateStream: () -> Unit,
     onJoinAsRemote: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -59,7 +60,7 @@ fun HomeScreen(
         ) {
             Text("ScoreCast", style = MaterialTheme.typography.headlineMedium)
             IconButton(
-                onClick = { /* settings — not yet built */ },
+                onClick = onOpenSettings,
                 modifier = Modifier.semantics { contentDescription = "Settings" },
             ) {
                 Text("⚙", fontSize = 22.sp)

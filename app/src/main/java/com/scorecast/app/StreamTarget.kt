@@ -64,4 +64,8 @@ object RecentTargetsStore {
         }
         File(context.filesDir, FILE_NAME).writeText(arr.toString())
     }
+
+    fun clear(context: Context) {
+        File(context.filesDir, FILE_NAME).delete()
+    }
 }

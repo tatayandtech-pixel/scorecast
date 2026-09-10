@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
 
 /** Navigation skeleton (spec Appendix B/A): portrait setup screens, landscape in-game screen. */
 private enum class Screen {
-    HOME, MATCHES, WIZARD_SPORT, WIZARD_TEAMS, WIZARD_PLATFORM, WIZARD_DESTINATION, IN_GAME,
+    HOME, SETTINGS, MATCHES, WIZARD_SPORT, WIZARD_TEAMS, WIZARD_PLATFORM, WIZARD_DESTINATION, IN_GAME,
     MIRROR_SCAN, MIRROR_SCORING,
 }
 
@@ -135,6 +135,10 @@ private fun AppRoot() {
         Screen.HOME -> HomeScreen(
             onCreateStream = { screen = Screen.MATCHES },
             onJoinAsRemote = { screen = Screen.MIRROR_SCAN },
+            onOpenSettings = { screen = Screen.SETTINGS },
+        )
+        Screen.SETTINGS -> SettingsScreen(
+            onBack = { screen = Screen.HOME },
         )
         Screen.MIRROR_SCAN -> MirrorScanScreen(
             onBack = { screen = Screen.HOME },

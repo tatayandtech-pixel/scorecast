@@ -44,6 +44,10 @@ object RecordingsManager {
 
     fun deleteRecording(file: File) { file.delete() }
 
+    fun deleteAll(context: Context) {
+        listRecordings(context).forEach { it.delete() }
+    }
+
     private fun mimeTypeFor(file: File): String =
         if (file.extension.equals("jpg", ignoreCase = true)) "image/jpeg" else "video/mp4"
 

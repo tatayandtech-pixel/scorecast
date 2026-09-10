@@ -17,6 +17,13 @@ data class FacebookLiveVideo(val id: String, val secureStreamUrl: String)
  *  app's own "Require app secret" dashboard setting is off, confirmed live against a real call. */
 object FacebookGraphApi {
 
+    /** The logged-in Facebook user's own display name, for showing "Signed in as X" in Settings. */
+    suspend fun getCurrentUserName(userAccessToken: AccessToken): String {
+        val json = request("me", HttpMethod.GET, userAccessToken = userAccessToken,
+            extraParams = Bundle().apply { putString("fields", "name") })
+        return json.getString("name")
+    }
+
     suspend fun listPages(userAccessToken: AccessToken): List<FacebookPage> {
         val json = request("me/accounts", HttpMethod.GET, userAccessToken = userAccessToken)
         val data = json.getJSONArray("data")

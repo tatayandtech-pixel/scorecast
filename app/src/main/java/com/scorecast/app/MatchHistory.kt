@@ -60,6 +60,10 @@ object MatchHistoryStore {
         writeAll(context, list(context).filterNot { it.id == id })
     }
 
+    fun deleteAll(context: Context) {
+        writeAll(context, emptyList())
+    }
+
     fun save(context: Context, record: MatchRecord) {
         writeAll(context, listOf(record) + list(context))
     }
