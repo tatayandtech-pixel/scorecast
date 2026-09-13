@@ -46,6 +46,7 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var downloading by remember { mutableStateOf(false) }
+    var updateError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         val current = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
@@ -86,13 +87,24 @@ fun HomeScreen(
                                     )
                                 } else {
                                     downloading = true
+                                    updateError = null
                                     scope.launch {
                                         val file = UpdateDownloader.downloadApk(
                                             context, update.downloadUrl, "scorecast_${update.versionTag}.apk"
                                         )
                                         downloading = false
-                                        if (file != null) {
-                                            context.startActivity(UpdateDownloader.installIntent(context, file))
+                                        updateError = when {
+                                            file == null -> "Download failed. Check your connection and try again."
+                                            // Anything not signed by our release key, or not ScoreCast
+                                            // at all, is deleted and never reaches the installer.
+                                            !UpdateDownloader.isTrustedUpdate(context, file) -> {
+                                                file.delete()
+                                                "Update rejected: this file isn't signed by ScoreCast. It was not installed."
+                                            }
+                                            else -> {
+                                                context.startActivity(UpdateDownloader.installIntent(context, file))
+                                                null
+                                            }
                                         }
                                     }
                                 }
@@ -106,6 +118,14 @@ fun HomeScreen(
                             Spacer(Modifier.width(8.dp))
                             CircularProgressIndicator(modifier = Modifier.height(20.dp))
                         }
+                    }
+                    updateError?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
                 }
             }

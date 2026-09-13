@@ -16,3 +16,8 @@ local.properties
 hs_err_pid*.log
 replay_pid*.log
 /.vscode/
+
+# Release signing: real credentials and keystores never enter the repo (it is public).
+/keystore.properties
+*.jks
+*.keystore

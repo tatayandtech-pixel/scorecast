@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Denies plaintext HTTP for everything the app fetches through the Android networking stack:
+  the GitHub Releases update check, the Facebook Graph API, and Firebase. All of those are
+  already https/wss, so this is a lock on the current behaviour rather than a change to it —
+  its value is that a future http:// URL fails loudly instead of silently shipping in the clear.
+
+  This does NOT cover the RTMP egress. StreamPack talks to the ingest server over its own
+  socket, which never consults this config, so rtmp:// targets (YouTube, Twitch) stay plaintext
+  either way; only choosing an rtmps:// ingest URL changes that, as the Facebook default already
+  does. Nothing here can break the stream.
+
+  Certificate pinning is deliberately omitted: pinning GitHub's or Google's chain would brick
+  update checks and sync on the next routine rotation, for no gain against the threats that
+  actually apply to a sideloaded app.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
