@@ -1,7 +1,6 @@
 package com.scorecast.app
 
 import android.os.Bundle
-import com.facebook.AccessToken
 import com.facebook.GraphRequest
 import com.facebook.HttpMethod
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -13,19 +12,27 @@ data class FacebookPage(val id: String, val name: String, val accessToken: Strin
 
 data class FacebookLiveVideo(val id: String, val secureStreamUrl: String)
 
-/** Thin suspend wrapper around Facebook's Graph API (Phase 8). No appsecret_proof is sent — this
- *  app's own "Require app secret" dashboard setting is off, confirmed live against a real call. */
+data class FacebookUser(val id: String, val name: String)
+
+/**
+ * Thin suspend wrapper around Facebook's Graph API (Phase 8). No appsecret_proof is sent — this
+ * app's own "Require app secret" dashboard setting is off, confirmed live against a real call.
+ *
+ * Tokens are passed as plain strings rather than the SDK's AccessToken type: the external-browser
+ * login flow never constructs one, since it does not use the SDK's LoginManager. Every call sets
+ * `access_token` explicitly as a parameter, which is what the Page calls already did.
+ */
 object FacebookGraphApi {
 
-    /** The logged-in Facebook user's own display name, for showing "Signed in as X" in Settings. */
-    suspend fun getCurrentUserName(userAccessToken: AccessToken): String {
-        val json = request("me", HttpMethod.GET, userAccessToken = userAccessToken,
-            extraParams = Bundle().apply { putString("fields", "name") })
-        return json.getString("name")
+    /** The logged-in user's id and display name, for "Signed in as X" and the stored session. */
+    suspend fun getCurrentUser(userToken: String): FacebookUser {
+        val json = request("me", HttpMethod.GET, token = userToken,
+            extraParams = Bundle().apply { putString("fields", "id,name") })
+        return FacebookUser(json.getString("id"), json.getString("name"))
     }
 
-    suspend fun listPages(userAccessToken: AccessToken): List<FacebookPage> {
-        val json = request("me/accounts", HttpMethod.GET, userAccessToken = userAccessToken)
+    suspend fun listPages(userToken: String): List<FacebookPage> {
+        val json = request("me/accounts", HttpMethod.GET, token = userToken)
         val data = json.getJSONArray("data")
         return (0 until data.length()).map { i ->
             val o = data.getJSONObject(i)
@@ -40,25 +47,23 @@ object FacebookGraphApi {
         }
         val json = request(
             "${page.id}/live_videos", HttpMethod.POST,
-            pageAccessToken = page.accessToken, extraParams = params,
+            token = page.accessToken, extraParams = params,
         )
         return FacebookLiveVideo(json.getString("id"), json.getString("secure_stream_url"))
     }
 
     suspend fun endLiveVideo(page: FacebookPage, liveVideoId: String) {
         val params = Bundle().apply { putString("status", "LIVE_STOPPED") }
-        request(liveVideoId, HttpMethod.POST, pageAccessToken = page.accessToken, extraParams = params)
+        request(liveVideoId, HttpMethod.POST, token = page.accessToken, extraParams = params)
     }
 
     private suspend fun request(
         path: String,
         method: HttpMethod,
-        userAccessToken: AccessToken? = null,
-        pageAccessToken: String? = null,
+        token: String,
         extraParams: Bundle = Bundle(),
     ): JSONObject = suspendCancellableCoroutine { cont ->
-        val params = Bundle(extraParams)
-        if (pageAccessToken != null) params.putString("access_token", pageAccessToken)
+        val params = Bundle(extraParams).apply { putString("access_token", token) }
         val callback = GraphRequest.Callback { response ->
             val error = response.error
             if (error != null) {
@@ -67,6 +72,6 @@ object FacebookGraphApi {
                 cont.resume(response.jsonObject ?: JSONObject())
             }
         }
-        GraphRequest(userAccessToken, path, params, method, callback).executeAsync()
+        GraphRequest(null, path, params, method, callback).executeAsync()
     }
 }

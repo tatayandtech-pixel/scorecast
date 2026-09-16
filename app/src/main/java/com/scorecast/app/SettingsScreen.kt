@@ -2,7 +2,6 @@ package com.scorecast.app
 
 import android.content.Intent
 import android.provider.Settings
-import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -83,35 +82,35 @@ private fun SettingsSection(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun FacebookAccountRow() {
-    val activity = LocalContext.current as ComponentActivity
+    val context = LocalContext.current
     val authState by FacebookAuthManager.state.collectAsState()
-    val scope = rememberCoroutineScope()
-    var userName by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(authState) {
-        val logged = authState as? FacebookAuthManager.State.LoggedIn
-        userName = if (logged != null) {
-            runCatching { FacebookGraphApi.getCurrentUserName(logged.accessToken) }.getOrNull()
-        } else null
-    }
+    // Rehydrates a session persisted by an earlier run. The display name comes from that stored
+    // session, so this row no longer makes a Graph call just to render itself.
+    LaunchedEffect(Unit) { FacebookAuthManager.restore(context) }
 
-    when (authState) {
+    when (val s = authState) {
         is FacebookAuthManager.State.LoggedIn -> {
             Text(
-                if (userName != null) "Signed in as $userName" else "Signed in with Facebook",
+                if (s.session.userName.isNotBlank()) "Signed in as ${s.session.userName}"
+                else "Signed in with Facebook",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = { FacebookAuthManager.logout() }) { Text("Sign out") }
+            OutlinedButton(onClick = { FacebookAuthManager.logout(context) }) { Text("Sign out") }
         }
         is FacebookAuthManager.State.LoggingIn -> {
             CircularProgressIndicator(modifier = Modifier.height(24.dp))
         }
         else -> {
-            Text("Not signed in", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (s is FacebookAuthManager.State.Error) s.message else "Not signed in",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (s is FacebookAuthManager.State.Error) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(Modifier.height(8.dp))
-            Button(onClick = { scope.launch { FacebookAuthManager.login(activity) } }) {
+            Button(onClick = { FacebookAuthManager.login(context) }) {
                 Text("Log in with Facebook")
             }
         }

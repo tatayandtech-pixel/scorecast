@@ -55,16 +55,26 @@
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
 
-        <!-- com.facebook.FacebookActivity is already declared by the facebook-common library's own
-             manifest (with its own configChanges/theme) — redeclaring it here only conflicts. -->
+        <!-- Phase 8 login happens in the device's own browser as a separate task, so none of the
+             Facebook SDK's own login surfaces are used and CustomTabActivity is no longer declared
+             here. The SDK is still a dependency, but only for GraphRequest.
+
+             web-mirror/fb-auth.html converts Facebook's https redirect into this custom scheme;
+             see FacebookAuthManager for why the round trip through our own origin is required. -->
         <activity
-            android:name="com.facebook.CustomTabActivity"
-            android:exported="true">
+            android:name=".FacebookAuthRedirectActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="@string/facebook_login_protocol_scheme" />
+                <data
+                    android:scheme="scorecast"
+                    android:host="fb-auth" />
             </intent-filter>
         </activity>
 

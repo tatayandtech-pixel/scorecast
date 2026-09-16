@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Returning to ScoreCast</title>
+<!--
+  Facebook OAuth bridge (Phase 8, external-browser flow).
+
+  Why this page exists: ScoreCast logs in through the device's real browser as a separate task,
+  not a Custom Tab or an embedded WebView. Facebook will only redirect to an https URL — a custom
+  scheme like scorecast:// is not accepted as a redirect_uri — so the browser has to land
+  somewhere on our own origin first and then hand off to the app.
+
+  It also converts the response from a fragment to a query string. Facebook returns the token in
+  location.hash, which is never sent to a server; this page reads it in JS and re-emits it as
+  scorecast://fb-auth?access_token=... so Android's intent-filter can deliver it to the app.
+  The token therefore never leaves the browser over the network. Hosting logs never see it.
+
+  This page must stay static and dependency-free. It handles a credential, so no analytics, no
+  third-party script, no fetch of any kind.
+-->
+<link rel="stylesheet" href="style.css">
+<style>
+  main { text-align: center; }
+  h1 { font-size: 1.25rem; margin: 0 0 12px; }
+  p { color: var(--muted); line-height: 1.5; margin: 0 0 16px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 20px;
+    margin-top: 48px;
+  }
+  .btn {
+    display: inline-block;
+    min-height: 56px;
+    padding: 16px 24px;
+    border-radius: 10px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid transparent;
+  }
+  .btn:focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
+  .err { color: var(--danger); }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1 id="heading">Signing you in…</h1>
+    <p id="detail" aria-live="polite">Returning to ScoreCast. You can close this tab once the app reopens.</p>
+    <a id="retry" class="btn" href="#" hidden>Open ScoreCast</a>
+  </div>
+</main>
+<script>
+(function () {
+  var heading = document.getElementById('heading');
+  var detail  = document.getElementById('detail');
+  var retry   = document.getElementById('retry');
+
+  function fail(message) {
+    heading.textContent = 'Sign-in failed';
+    heading.className = 'err';
+    detail.textContent = message + ' Return to ScoreCast and try again.';
+  }
+
+  // Facebook puts a successful response in the fragment and an error in the query string.
+  var frag  = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+  var query = new URLSearchParams(location.search || '');
+
+  var error = query.get('error_description') || query.get('error') || frag.get('error');
+  if (error) {
+    fail(error === 'access_denied' ? 'You cancelled the login.' : error);
+    return;
+  }
+
+  var token = frag.get('access_token');
+  var state = frag.get('state');
+  if (!token || !state) {
+    fail('Facebook did not return a token.');
+    return;
+  }
+
+  // Rebuild as a custom-scheme URL the Android intent-filter can match. Only the three fields the
+  // app actually consumes are forwarded; anything else Facebook adds is dropped deliberately.
+  var out = new URLSearchParams();
+  out.set('access_token', token);
+  out.set('state', state);
+  if (frag.get('expires_in')) out.set('expires_in', frag.get('expires_in'));
+  var appUrl = 'scorecast://fb-auth?' + out.toString();
+
+  // Drop the token out of this page's own history entry before handing off, so a Back tap or a
+  // shoulder-surfer does not land on a URL bar still showing it.
+  try { history.replaceState(null, '', location.pathname); } catch (e) { /* non-fatal */ }
+
+  retry.href = appUrl;
+  location.replace(appUrl);
+
+  // If the app did not come to the foreground, the scheme did not resolve — offer a manual tap
+  // rather than leaving a page that looks stuck.
+  setTimeout(function () {
+    if (document.visibilityState === 'visible') {
+      heading.textContent = 'Almost there';
+      detail.textContent = 'ScoreCast did not open automatically. Tap below to finish signing in.';
+      retry.hidden = false;
+    }
+  }, 1500);
+})();
+</script>
+</body>
+</html>
