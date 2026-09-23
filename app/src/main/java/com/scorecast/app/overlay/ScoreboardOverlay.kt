@@ -21,10 +21,53 @@ object ScoreboardOverlay {
 
     fun create(state: GameState, logos: List<LogoEntry>, config: SportConfig?, frame: Size): Bitmap {
         val bmp = Bitmap.createBitmap(frame.width, frame.height, Bitmap.Config.ARGB_8888)
+        renderInto(bmp, state, logos, config, frame)
+        return bmp
+    }
+
+    /** Redraws into an existing frame-sized bitmap instead of allocating a new one. The render
+     *  loop reuses buffers this way — see [CameraOverlayVideoSource]. */
+    fun renderInto(bmp: Bitmap, state: GameState, logos: List<LogoEntry>, config: SportConfig?, frame: Size) {
+        bmp.eraseColor(Color.TRANSPARENT)
         val canvas = Canvas(bmp)
         drawLogos(canvas, logos, frame)
         drawScoreboard(canvas, state, config, frame)
-        return bmp
+    }
+
+    /**
+     * Everything that determines the rendered pixels, so the render loop can skip a redraw and
+     * the GPU upload when nothing has actually changed.
+     *
+     * [GameState] and [LogoEntry] are data classes, so their `equals` covers every drawn field
+     * for free — including [GameState.sport], which is what `config` is derived from. The only
+     * parts of the render that vary with *time* rather than with state are the clock text and
+     * which logo a shared corner is currently showing, so both are resolved here to the value
+     * that would actually be drawn.
+     *
+     * If you draw something that is not derived from state, logos or the clock, add it here too
+     * — otherwise the overlay will silently go stale on the broadcast.
+     */
+    data class Signature(
+        val state: GameState,
+        val logos: List<LogoEntry>,
+        val scoringModel: String?,
+        val clockText: String,
+        val logoRotation: Long,
+        val frame: Size,
+    )
+
+    fun signature(state: GameState, logos: List<LogoEntry>, config: SportConfig?, frame: Size): Signature {
+        // Only advance with the rotation clock when a corner actually holds more than one logo;
+        // otherwise nothing rotates and an idle scoreboard stays byte-identical indefinitely.
+        val rotates = logos.groupingBy { it.slot }.eachCount().any { it.value > 1 }
+        return Signature(
+            state = state,
+            logos = logos,
+            scoringModel = config?.scoringModel,
+            clockText = state.clockDisplay(ServerTimeSync.nowMs()).toClockString(),
+            logoRotation = if (rotates) System.currentTimeMillis() / LOGO_ROTATION_INTERVAL_MS else 0L,
+            frame = frame,
+        )
     }
 
     // ---- scoreboard bar ----

@@ -29,6 +29,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 
+/** How often the overlay loop checks whether the scoreboard needs redrawing. Kept well under a
+ *  second so a clock tick lands on the broadcast promptly — the check itself is cheap, and a
+ *  redraw only follows when something actually changed. */
+private const val OVERLAY_POLL_MS = 250L
+
 class CameraOverlayVideoSource internal constructor(
     val cameraId: String,
     private val camera: IVideoSourceInternal,
@@ -122,12 +127,34 @@ class CameraOverlayVideoSource internal constructor(
         camera.startStream()
 
         overlayJob = overlayScope.launch {
-            val ticker = flow { while (true) { emit(Unit); delay(250) } }
+            // Poll often enough that a clock tick reaches the broadcast promptly, but only redraw
+            // when the rendered content actually changed. This loop used to allocate a fresh
+            // frame-sized ARGB_8888 bitmap (3.5 MiB at 720p) and re-upload it to the GPU on every
+            // single tick regardless of whether anything moved — ~14 MiB/s of garbage for a bar
+            // that usually changes once a second at most. Measured on-device: 21.9% janky frames,
+            // 150ms at the 90th percentile, "Skipped 72 frames" on the main thread. Being on
+            // Dispatchers.Default does not help; the GC pauses it caused stalled every thread.
+            val ticker = flow { while (true) { emit(Unit); delay(OVERLAY_POLL_MS) } }
+            // Two buffers, alternated. updateOverlay() hands the bitmap to the GL thread and
+            // uploads it there, so the buffer we just published must not be the one we draw into
+            // next. They are deliberately never recycled: the GL upload is asynchronous, and
+            // recycling underneath it would risk a use-after-recycle crash for the sake of
+            // collecting 7 MiB once per session.
+            val buffers = Array(2) {
+                Bitmap.createBitmap(cfg.resolution.width, cfg.resolution.height, Bitmap.Config.ARGB_8888)
+            }
+            var next = 0
+            var lastSignature: ScoreboardOverlay.Signature? = null
             combine(GameStateHolder.state, LogoHolder.logos, ticker) { state, logos, _ ->
                 Pair(state, logos)
             }.collect { (state, logos) ->
                 val config = SportConfigLoader.getCached(state.sport)
-                val bitmap = ScoreboardOverlay.create(state, logos, config, cfg.resolution)
+                val signature = ScoreboardOverlay.signature(state, logos, config, cfg.resolution)
+                if (signature == lastSignature) return@collect
+                lastSignature = signature
+                val bitmap = buffers[next]
+                next = (next + 1) % buffers.size
+                ScoreboardOverlay.renderInto(bitmap, state, logos, config, cfg.resolution)
                 compositor?.updateOverlay(bitmap)
             }
         }
