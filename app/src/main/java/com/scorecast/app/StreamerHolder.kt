@@ -26,7 +26,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.EOFException
 import java.io.File
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 object StreamerHolder {
 
@@ -202,13 +206,40 @@ object StreamerHolder {
 
     private fun fail(t: Throwable) {
         Log.e(TAG, "Stream error", t)
-        val message = t.message ?: t.javaClass.simpleName
+        val message = describe(t)
         scope.launch {
             // Tear down first, then publish Error last, so nothing in the teardown path can
             // clobber it. State.Error is terminal until the operator acknowledges it via
             // acknowledgeError() or starts/ends a new stream.
             runCatching { teardown() }
             _state.value = State.Error(message)
+        }
+    }
+
+    /**
+     * Turns a streaming failure into something the operator can act on.
+     *
+     * The library's own messages describe the socket rather than the cause — a rejected stream
+     * key surfaces as the bare word "Connection lost", which reads as a network problem and sends
+     * the operator off to check their wifi. It is worth distinguishing: an ingest server that
+     * completes the RTMP handshake and *then* hangs up within a second is refusing the
+     * credentials, not running short of bandwidth. A genuinely bad network fails differently
+     * (DNS, connect, or timeout), so those get their own text.
+     */
+    private fun describe(t: Throwable): String {
+        // Bounded in case a throwable chain ever loops back on itself.
+        val chain = generateSequence(t) { it.cause }.take(10).toList()
+        return when {
+            chain.any { it is EOFException } ->
+                "The server accepted the connection, then closed it. Check the stream key is " +
+                    "current and that the broadcast is live on the platform."
+            chain.any { it is UnknownHostException } ->
+                "Couldn't find the ingest server. Check the ingest URL."
+            chain.any { it is SocketTimeoutException } ->
+                "Timed out reaching the ingest server. Check the network connection."
+            chain.any { it is ConnectException } ->
+                "Couldn't reach the ingest server. Check the ingest URL and the network."
+            else -> t.message ?: t.javaClass.simpleName
         }
     }
 
