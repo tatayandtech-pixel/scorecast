@@ -128,43 +128,47 @@ fun LiveCountdownSection(
     onReset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Two lines (label+time+play, then the adjust buttons) rather than one wide row — sharing
-    // half the video strip's width with Shot Clock left too little room for a single row holding
-    // all of it, which silently clipped the +30/Rst buttons off-screen.
-    Column(modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("COUNTDOWN", color = LiveTheme.TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Box(
-                modifier = Modifier.size(44.dp).clickable(onClick = onEdit)
+    // Label+time over the adjust buttons, with the play button beside both rather than in the top
+    // line. A 44dp play button (and a 44dp edit box) in the top line made it 44+4+44 = 92dp tall,
+    // more than the ~67dp the video strip has left under the REMOTE SCORING row on a 1080px-tall
+    // landscape screen, so the -30/+30/Rst row was squashed into label-less pills. This way the
+    // section is as tall as Shot Clock's (text line + one button row). The edit target is the whole
+    // label/time line: narrower than 44dp in height, but wide, and editing is a rare action.
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.clickable(onClick = onEdit)
                     .semantics { contentDescription = "Edit countdown clock" },
-                contentAlignment = Alignment.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                Text("COUNTDOWN", color = LiveTheme.TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Text("✎", color = LiveTheme.TextMuted, fontSize = 13.sp)
+                Text(
+                    displaySeconds.toClockString(),
+                    color = LiveTheme.TextPrimary,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                )
             }
-            Text(
-                displaySeconds.toClockString(),
-                color = LiveTheme.TextPrimary,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.weight(1f))
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(LiveTheme.Accent)
-                    .clickable(onClick = onToggleRunning)
-                    .semantics { contentDescription = if (clockRunning) "Pause clock" else "Start clock" },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(if (clockRunning) "❚❚" else "▶", color = LiveTheme.AccentInk, fontSize = 14.sp)
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                LiveSmallButton("-30") { onAdjust(-30f) }
+                LiveSmallButton("+30") { onAdjust(30f) }
+                LiveSmallButton("Rst") { onReset() }
             }
         }
-        Spacer(Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            LiveSmallButton("-30") { onAdjust(-30f) }
-            LiveSmallButton("+30") { onAdjust(30f) }
-            LiveSmallButton("Rst") { onReset() }
+        Spacer(Modifier.width(6.dp))
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(LiveTheme.Accent)
+                .clickable(onClick = onToggleRunning)
+                .semantics { contentDescription = if (clockRunning) "Pause clock" else "Start clock" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(if (clockRunning) "❚❚" else "▶", color = LiveTheme.AccentInk, fontSize = 14.sp)
         }
     }
 }
@@ -356,7 +360,7 @@ fun LiveBottomBar(
             // Idle-after-a-failure were pixel-identical. Colour is always paired with a word, per
             // DESIGN.md's Status Indicator rule.
             val (statusColor, statusLabel) = when (streamerState) {
-                StreamerHolder.State.Live -> LiveTheme.DangerText to "LIVE"
+                StreamerHolder.State.Live -> LiveTheme.DangerText to if (StreamerHolder.recordOnly) "REC" else "LIVE"
                 StreamerHolder.State.Starting -> LiveTheme.PendingText to "Starting…"
                 is StreamerHolder.State.Error -> LiveTheme.DangerText to "Off air"
                 StreamerHolder.State.Idle -> LiveTheme.TextMuted to "Off air"

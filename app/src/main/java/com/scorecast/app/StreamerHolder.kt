@@ -62,6 +62,11 @@ object StreamerHolder {
     var currentRecordingFile: File? = null
         private set
 
+    /** True when the current session only records locally — nothing is on air, so the UI must
+     *  not say "LIVE" even though the streamer itself is in [State.Live]. */
+    var recordOnly: Boolean = false
+        private set
+
     /** Wall-clock time [State.Live] was entered, for the elapsed on-air timer in the live UI;
      *  0L while not live. Local device time only — this is a display-only elapsed counter, not a
      *  synced value, so raw device time (not [ServerTimeSync]) is the right source here. */
@@ -81,6 +86,7 @@ object StreamerHolder {
         if (streamer != null) return
         _state.value = State.Starting
         currentRecordingFile = recordingFile
+        recordOnly = mode == RecordingMode.RECORD_ONLY
         try {
             val cameraId = backCameraId(context)
             val videoSourceFactory = CameraOverlayVideoSourceFactory(cameraId) { size ->
@@ -165,6 +171,7 @@ object StreamerHolder {
         val s = streamer ?: run { _liveStartedAtMs.value = 0L; return }
         streamer = null
         currentRecordingFile = null
+        recordOnly = false
         _liveStartedAtMs.value = 0L
         try {
             s.stopStream()

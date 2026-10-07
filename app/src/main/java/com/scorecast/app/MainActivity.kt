@@ -14,6 +14,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -130,6 +131,24 @@ private fun AppRoot() {
             else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
     }
+
+    // System Back mirrors each screen's own on-screen back control. Without this the router never
+    // saw Back at all and Android finished MainActivity instead. HOME is left to the system (exits),
+    // and IN_GAME handles Back itself (StreamScreen/LiveOverlay) since a live match needs a confirm.
+    val backTarget: (() -> Unit)? = when (screen) {
+        Screen.SETTINGS, Screen.MIRROR_SCAN, Screen.MATCHES -> { { screen = Screen.HOME } }
+        Screen.MIRROR_SCORING -> { {
+            FirebaseSessionSync.stop()
+            mirrorSession = null
+            screen = Screen.HOME
+        } }
+        Screen.WIZARD_SPORT -> { { screen = Screen.MATCHES } }
+        Screen.WIZARD_TEAMS -> { { screen = Screen.WIZARD_SPORT } }
+        Screen.WIZARD_PLATFORM -> { { screen = Screen.WIZARD_TEAMS } }
+        Screen.WIZARD_DESTINATION -> { { screen = Screen.WIZARD_PLATFORM } }
+        Screen.HOME, Screen.IN_GAME -> null
+    }
+    BackHandler(enabled = backTarget != null) { backTarget?.invoke() }
 
     when (screen) {
         Screen.HOME -> HomeScreen(
@@ -265,6 +284,9 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
     // the factory comment below), so this can't reintroduce the camera-session-recreation bug.
     val videoConstrained = showLiveUi && !fullscreenVideo
 
+    // Before Go Live, Back is "← Matches". Once live, LiveOverlay's own BackHandler takes over.
+    BackHandler(enabled = !showLiveUi, onBack = onExit)
+
     Box(Modifier.fillMaxSize()) {
         // Camera always fills the screen so the SurfaceView is never recreated.
         // A float[] tag lets the pinch handler read the current zoom without
@@ -297,6 +319,17 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
             },
             update = { sv -> (sv.tag as FloatArray)[0] = zoom },
         )
+
+        if (!showLiveUi && !hasPermission(context, Manifest.permission.CAMERA)) {
+            // Permissions are only requested on Go Live, so on a fresh install the preview area is
+            // plain black until then — say why instead of looking broken.
+            Text(
+                "Camera preview appears once you allow camera access — tap Go Live.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 24.dp).width(280.dp),
+            )
+        }
 
         if (!showLiveUi) {
             // ── SETUP mode: right-side panel with Scoring and Stream tabs ──────
@@ -446,6 +479,12 @@ private fun LiveOverlay(
     var showMenuStub by remember { mutableStateOf(false) }
     var micMuted by remember { mutableStateOf(false) }
     val isRecording = remember(streamerState) { StreamerHolder.currentRecordingFile != null }
+
+    // Mid-match, a stray Back swipe must never end the broadcast: leave fullscreen if in it,
+    // otherwise ask through the same End Match confirm the Stop button uses.
+    BackHandler {
+        if (fullscreenVideo) onToggleFullscreen() else showEndMatchConfirm = true
+    }
     val batteryPct = rememberBatteryPercent()
 
     if (fullscreenVideo) {
@@ -468,7 +507,7 @@ private fun LiveOverlay(
                 // Live/Starting keep the pure-red/yellow tally-light convention (DESIGN.md);
                 // off-air is not a tally state, so it uses the theme's own colours.
                 val (liveChipText, liveChipColor) = when (streamerState) {
-                    StreamerHolder.State.Live -> "● LIVE" to Color.Red
+                    StreamerHolder.State.Live -> (if (StreamerHolder.recordOnly) "● REC" else "● LIVE") to Color.Red
                     StreamerHolder.State.Starting -> "● Starting…" to Color.Yellow
                     is StreamerHolder.State.Error -> "○ Off air" to MaterialTheme.colorScheme.error
                     StreamerHolder.State.Idle -> "○ Off air" to MaterialTheme.colorScheme.onSurfaceVariant
@@ -561,7 +600,10 @@ private fun LiveOverlay(
                         .weight(1f)
                         .fillMaxHeight()
                         .background(LiveTheme.Background)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        // No vertical padding: on a 1080px-tall landscape screen this strip is only
+                        // ~111dp, and SpaceEvenly already spaces the two rows. 6dp top/bottom was
+                        // enough to squash the Countdown/Shot Clock buttons below.
+                        .padding(horizontal = 12.dp),
                     verticalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     val shareAction = {
@@ -983,7 +1025,10 @@ private fun VerticalDottedZoomSlider(
                 pathEffect = dashEffect,
             )
             val thumbRadius = size.width / 2.2f
-            val thumbY = (thumbFraction * size.height).coerceIn(thumbRadius, size.height - thumbRadius)
+            // Mapped onto the span between the two end margins rather than clamped into it: clamping
+            // swallowed the first and last ~10% of the zoom range (radius ≈ 10% of a 90dp track),
+            // so the first few zoom steps never moved the thumb at all.
+            val thumbY = thumbRadius + thumbFraction * (size.height - 2 * thumbRadius)
             drawCircle(color = Color.White, radius = thumbRadius, center = Offset(size.width / 2f, thumbY))
         }
     }
