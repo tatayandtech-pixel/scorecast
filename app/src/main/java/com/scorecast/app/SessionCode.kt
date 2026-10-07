@@ -14,22 +14,34 @@ data class SessionCode(
     val sessionId: String,
     val joinToken: String,
 ) {
-    fun toQrPayload(): String = JSONObject().apply {
-        put("sessionId", sessionId)
-        put("joinToken", joinToken)
-    }.toString()
+    /** A web-mirror link, so any phone's own camera app can open it in a browser and join without
+     *  typing anything. The code sits in the fragment, which browsers never send to the server,
+     *  so the join token stays out of Firebase Hosting's request logs. */
+    fun toQrPayload(): String = "$WEB_MIRROR_URL#join=$sessionId:$joinToken"
 
     companion object {
+        const val WEB_MIRROR_URL = "https://scorecast-app-625c0.web.app/"
+
         /** Short-lived join token (spec §9) so a stray scan of an old QR can't still bind. */
         fun generate(): SessionCode = SessionCode(
             sessionId = UUID.randomUUID().toString(),
             joinToken = UUID.randomUUID().toString().take(8),
         )
 
-        fun parse(payload: String): SessionCode? = runCatching {
-            val o = JSONObject(payload)
-            SessionCode(sessionId = o.getString("sessionId"), joinToken = o.getString("joinToken"))
-        }.getOrNull()
+        /** Accepts the web-mirror link the QR now carries, and the JSON payload older builds
+         *  showed, so the in-app scanner pairs with either. */
+        fun parse(payload: String): SessionCode? {
+            val code = payload.substringAfter("#join=", missingDelimiterValue = "")
+            if (code.isNotEmpty()) {
+                val sessionId = code.substringBefore(':')
+                val joinToken = code.substringAfter(':', missingDelimiterValue = "")
+                return if (sessionId.isNotBlank() && joinToken.isNotBlank()) SessionCode(sessionId, joinToken) else null
+            }
+            return runCatching {
+                val o = JSONObject(payload)
+                SessionCode(sessionId = o.getString("sessionId"), joinToken = o.getString("joinToken"))
+            }.getOrNull()
+        }
     }
 }
 

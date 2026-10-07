@@ -833,9 +833,9 @@ private fun LiveOverlay(
         val qrBitmap = remember(session) { QrCodeUtil.generate(session.toQrPayload()).asImageBitmap() }
         val clipboard = LocalClipboardManager.current
         val pairingCode = "${session.sessionId}:${session.joinToken}"
-        // Copies the link alongside the code (not just the bare code) so the whole thing can be
-        // pasted straight into a text/chat message to the remote scorer, who needs both pieces.
-        val shareText = "Join my ScoreCast match: https://scorecast-app-625c0.web.app  Code: $pairingCode"
+        // The same join link the QR carries, so a scorer sent it in a chat joins with one tap; the
+        // bare code stays alongside it for anyone typing it in by hand.
+        val shareText = "Join my ScoreCast match: ${session.toQrPayload()}  Code: $pairingCode"
         var copied by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showPairDialog = false },
@@ -857,7 +857,8 @@ private fun LiveOverlay(
                     Spacer(Modifier.width(16.dp))
                     Column {
                         Text(
-                            "Android: scan this code. iPhone/laptop: go to scorecast-app-625c0.web.app and enter the code below.",
+                            "Scan with any phone's camera to open the scoring page — it joins automatically. " +
+                                "Or go to scorecast-app-625c0.web.app and enter the code below.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Spacer(Modifier.height(8.dp))

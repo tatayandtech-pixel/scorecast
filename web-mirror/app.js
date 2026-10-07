@@ -585,10 +585,27 @@ el("join-form").addEventListener("submit", async (evt) => {
   }
 });
 
+// Opened from the main device's pairing QR (or a shared join link): the code arrives as
+// `#join=sessionId:joinToken`. It's a fragment so it never reaches Hosting's request logs, and
+// it's stripped from the address bar and history right away so the token can't be re-shared by
+// copying the URL. The code is only filled in — the scorer still taps Join themselves (owner request).
+function fillCodeFromLink() {
+  const prefix = "#join=";
+  if (!location.hash.startsWith(prefix)) return false;
+  const code = decodeURIComponent(location.hash.slice(prefix.length));
+  history.replaceState(null, "", location.pathname + location.search);
+  if (!parsePairingCode(code)) return false;
+  el("pairing-code").value = code;
+  el("join-btn").focus();
+  return true;
+}
+
 // Auto-rejoin on load if we have a previously-successful pairing code (spec-equivalent of
 // Android's activity-recreation gap, but here caused by iOS Safari's more aggressive
-// backgrounded-tab eviction reloading the page from scratch mid-match).
+// backgrounded-tab eviction reloading the page from scratch mid-match). A join link takes
+// precedence: it's a deliberate scan for what may be a newer match, so don't rejoin the old one.
 (async function attemptStoredSession() {
+  if (fillCodeFromLink()) return;
   const stored = sessionStorage.getItem(STORAGE_KEY);
   const parsed = stored ? parsePairingCode(stored) : null;
   if (!parsed) return;
