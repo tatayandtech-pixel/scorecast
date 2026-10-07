@@ -29,7 +29,8 @@ object LogoHolder {
     fun getBitmap(id: String): Bitmap? = bitmaps[id]
 
     fun addLogo(context: Context, uri: Uri, slot: LogoSlot): Boolean {
-        val bmp = decodeSampled(context, uri, maxSide = 512) ?: return false
+        val decoded = decodeSampled(context, uri, maxSide = 512) ?: return false
+        val bmp = LogoProcessor.process(decoded).also { if (it !== decoded) decoded.recycle() }
         val entry = LogoEntry(uriString = uri.toString(), slot = slot)
         bitmaps[entry.id] = bmp
         _logos.value = _logos.value + entry
