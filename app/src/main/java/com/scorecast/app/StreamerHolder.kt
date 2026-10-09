@@ -5,12 +5,14 @@ import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioFormat
+import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
 import androidx.annotation.RequiresPermission
 import com.scorecast.app.overlay.CameraOverlayVideoSource
 import com.scorecast.app.overlay.CameraOverlayVideoSourceFactory
 import com.scorecast.app.overlay.ScoreboardOverlay
+import io.github.thibaultbee.streampack.core.configuration.mediadescriptor.MediaDescriptor
 import io.github.thibaultbee.streampack.core.configuration.mediadescriptor.UriMediaDescriptor
 import io.github.thibaultbee.streampack.core.elements.endpoints.CombineEndpoint
 import io.github.thibaultbee.streampack.core.elements.endpoints.CombineEndpointFactory
@@ -19,9 +21,13 @@ import io.github.thibaultbee.streampack.core.elements.sources.audio.audiorecord.
 import io.github.thibaultbee.streampack.core.streamers.single.AudioConfig
 import io.github.thibaultbee.streampack.core.streamers.single.SingleStreamer
 import io.github.thibaultbee.streampack.core.streamers.single.VideoConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,6 +44,9 @@ object StreamerHolder {
         data object Idle : State
         data object Starting : State
         data object Live : State
+        /** The connection dropped after going live and [attempt] is the retry in progress. The
+         *  match is still on, so the UI treats this like Live (spec §10 stream resilience). */
+        data class Reconnecting(val attempt: Int) : State
         data class Error(val message: String) : State
     }
 
@@ -73,7 +82,20 @@ object StreamerHolder {
     private val _liveStartedAtMs = MutableStateFlow(0L)
     val liveStartedAtMs: StateFlow<Long> = _liveStartedAtMs.asStateFlow()
 
-    val isStreaming: Boolean get() = _state.value is State.Live || _state.value is State.Starting
+    val isStreaming: Boolean
+        get() = _state.value.let { it is State.Live || it is State.Starting || it is State.Reconnecting }
+
+    /** What [reconnect] needs to reopen the same broadcast. In memory only, like the key itself. */
+    private class Session(
+        val ingestUrl: String,
+        val streamKey: String,
+        val mode: RecordingMode,
+        val firstRecordingFile: File?,
+    ) {
+        var part = 1
+    }
+    private var session: Session? = null
+    private var reconnectJob: Job? = null
 
     @RequiresPermission(allOf = [Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO])
     suspend fun start(
@@ -130,18 +152,10 @@ object StreamerHolder {
             // connects and startStream() attaches the encoder.
             source()?.warmUp()
 
-            scope.launch { s.throwableFlow.collect { t -> if (t != null) fail(t) } }
+            session = Session(ingestUrl, streamKey, mode, recordingFile)
+            scope.launch { s.throwableFlow.collect { t -> if (t != null) onStreamError(t) } }
 
-            val descriptor = when (mode) {
-                RecordingMode.STREAM_ONLY -> UriMediaDescriptor(buildRtmpUrl(ingestUrl, streamKey))
-                RecordingMode.RECORD_ONLY -> UriMediaDescriptor(requireNotNull(recordingFile).toUri())
-                RecordingMode.STREAM_AND_RECORD -> CombineEndpoint.CombineDescriptor(listOf(
-                    UriMediaDescriptor(buildRtmpUrl(ingestUrl, streamKey)),
-                    UriMediaDescriptor(requireNotNull(recordingFile).toUri()),
-                ))
-            }
-
-            s.open(descriptor)
+            s.open(descriptor(ingestUrl, streamKey, mode, recordingFile))
             s.startStream()
             applyFlip()
             applyPreview()
@@ -154,6 +168,7 @@ object StreamerHolder {
     }
 
     suspend fun stop() {
+        reconnectJob?.cancelAndJoin()
         teardown()
         _state.value = State.Idle
     }
@@ -170,6 +185,7 @@ object StreamerHolder {
     private suspend fun teardown() {
         val s = streamer ?: run { _liveStartedAtMs.value = 0L; return }
         streamer = null
+        session = null
         currentRecordingFile = null
         recordOnly = false
         _liveStartedAtMs.value = 0L
@@ -210,6 +226,103 @@ object StreamerHolder {
 
     private fun applyPreview() { source()?.setPreviewSurface(previewSurface) }
     private fun applyFlip() { _flip.value.let { source()?.setTransform(it.horizontal, it.vertical, it.rotation) } }
+
+    /**
+     * Routes an error raised by the streamer while it runs. Only a broadcast that was already on
+     * air is retried: a failure while Starting is almost always a wrong URL or key, which no
+     * amount of retrying fixes, so it still fails straight to [State.Error].
+     */
+    @Synchronized
+    private fun onStreamError(t: Throwable) {
+        // A null streamer means teardown is closing it, and errors from that are expected.
+        if (streamer == null) return
+        when (_state.value) {
+            // The retry loop owns errors raised by its own attempts.
+            is State.Reconnecting -> return
+            State.Live -> if (!recordOnly) {
+                Log.w(TAG, "Stream dropped, reconnecting", t)
+                _state.value = State.Reconnecting(attempt = 1)
+                reconnectJob = scope.launch { reconnect(t) }
+                return
+            }
+            else -> Unit
+        }
+        fail(t)
+    }
+
+    /** Retries the dropped broadcast with exponential backoff until it is back on air, or gives
+     *  up after [RECONNECT_GIVE_UP_MS] and reports the last failure. */
+    private suspend fun reconnect(cause: Throwable) {
+        val giveUpAt = SystemClock.elapsedRealtime() + RECONNECT_GIVE_UP_MS
+        var lastError = cause
+        var attempt = 1
+        while (SystemClock.elapsedRealtime() < giveUpAt) {
+            _state.value = State.Reconnecting(attempt)
+            delay(RECONNECT_DELAYS_MS.getOrElse(attempt - 1) { RECONNECT_DELAYS_MS.last() })
+            try {
+                reopen()
+                _state.value = State.Live
+                Log.i(TAG, "Reconnected on attempt $attempt")
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w(TAG, "Reconnect attempt $attempt failed", e)
+                lastError = e
+            }
+            attempt++
+        }
+        fail(lastError)
+    }
+
+    /**
+     * Closes the dead connection and opens it again on the same streamer, mirroring [start]'s
+     * warm-up → open → start order. stopStream() also stops the camera, so it is warmed up again.
+     *
+     * Stream + record goes through one [CombineEndpoint], which only opens with every descriptor
+     * at once. The MP4 therefore closes along with the RTMP connection, and reopening the same
+     * path would overwrite it, so each reconnect records into a new part file.
+     */
+    private suspend fun reopen() {
+        val s = streamer ?: throw CancellationException("Stream was stopped")
+        val sess = session ?: throw CancellationException("Stream was stopped")
+        runCatching { s.stopStream() }
+        runCatching { s.close() }
+
+        val partFile = sess.firstRecordingFile?.let { partFile(it, sess.part + 1) }
+        try {
+            source()?.warmUp()
+            s.open(descriptor(sess.ingestUrl, sess.streamKey, sess.mode, partFile))
+            s.startStream()
+        } catch (t: Throwable) {
+            // Don't leave an empty part behind for every failed attempt.
+            partFile?.delete()
+            throw t
+        }
+        if (partFile != null) {
+            sess.part++
+            currentRecordingFile = partFile
+        }
+        applyFlip()
+        applyPreview()
+    }
+
+    private fun partFile(first: File, part: Int): File =
+        File(first.parentFile, "${first.nameWithoutExtension}_part$part.${first.extension}")
+
+    private fun descriptor(
+        ingestUrl: String,
+        streamKey: String,
+        mode: RecordingMode,
+        recordingFile: File?,
+    ): MediaDescriptor = when (mode) {
+        RecordingMode.STREAM_ONLY -> UriMediaDescriptor(buildRtmpUrl(ingestUrl, streamKey))
+        RecordingMode.RECORD_ONLY -> UriMediaDescriptor(requireNotNull(recordingFile).toUri())
+        RecordingMode.STREAM_AND_RECORD -> CombineEndpoint.CombineDescriptor(listOf(
+            UriMediaDescriptor(buildRtmpUrl(ingestUrl, streamKey)),
+            UriMediaDescriptor(requireNotNull(recordingFile).toUri()),
+        ))
+    }
 
     private fun fail(t: Throwable) {
         Log.e(TAG, "Stream error", t)
@@ -266,6 +379,10 @@ object StreamerHolder {
                 CameraCharacteristics.LENS_FACING_BACK
         } ?: ids.first()
     }
+
+    /** Wait before each reconnect attempt; the last value repeats until [RECONNECT_GIVE_UP_MS]. */
+    private val RECONNECT_DELAYS_MS = longArrayOf(1_000, 2_000, 4_000, 8_000, 10_000)
+    private const val RECONNECT_GIVE_UP_MS = 5 * 60 * 1000L
 
     private const val TAG = "StreamerHolder"
 }

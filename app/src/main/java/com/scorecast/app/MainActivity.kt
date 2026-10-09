@@ -245,7 +245,8 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
     var startRequested by remember { mutableStateOf(false) }
     var surfaceViewRef by remember { mutableStateOf<SurfaceView?>(null) }
 
-    val isLive = streamerState is StreamerHolder.State.Live || streamerState is StreamerHolder.State.Starting
+    val isLive = streamerState is StreamerHolder.State.Live || streamerState is StreamerHolder.State.Starting ||
+        streamerState is StreamerHolder.State.Reconnecting
     // A dead stream must not yank the operator back to the setup panel mid-match — the game is
     // still being played and they're still scoring. Keep the live UI mounted for Error too and
     // surface the failure in place (LiveErrorBanner); only Idle returns to setup.
@@ -402,7 +403,8 @@ private fun SetupPanel(
     onGoLive: () -> Unit,
     onExit: () -> Unit,
 ) {
-    val isLive = streamerState is StreamerHolder.State.Live || streamerState is StreamerHolder.State.Starting
+    val isLive = streamerState is StreamerHolder.State.Live || streamerState is StreamerHolder.State.Starting ||
+        streamerState is StreamerHolder.State.Reconnecting
     var selectedTab by remember { mutableIntStateOf(0) }
 
     Column(modifier = modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -509,6 +511,7 @@ private fun LiveOverlay(
                 val (liveChipText, liveChipColor) = when (streamerState) {
                     StreamerHolder.State.Live -> (if (StreamerHolder.recordOnly) "● REC" else "● LIVE") to Color.Red
                     StreamerHolder.State.Starting -> "● Starting…" to Color.Yellow
+                    is StreamerHolder.State.Reconnecting -> "● Reconnecting… (${streamerState.attempt})" to Color.Yellow
                     is StreamerHolder.State.Error -> "○ Off air" to MaterialTheme.colorScheme.error
                     StreamerHolder.State.Idle -> "○ Off air" to MaterialTheme.colorScheme.onSurfaceVariant
                 }
@@ -1197,6 +1200,7 @@ private fun statusText(state: StreamerHolder.State): String = when (state) {
     StreamerHolder.State.Idle      -> "idle"
     StreamerHolder.State.Starting  -> "starting…"
     StreamerHolder.State.Live      -> "LIVE"
+    is StreamerHolder.State.Reconnecting -> "reconnecting (attempt ${state.attempt})…"
     is StreamerHolder.State.Error  -> "error — ${state.message}"
 }
 

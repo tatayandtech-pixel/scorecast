@@ -362,13 +362,16 @@ fun LiveBottomBar(
             val (statusColor, statusLabel) = when (streamerState) {
                 StreamerHolder.State.Live -> LiveTheme.DangerText to if (StreamerHolder.recordOnly) "REC" else "LIVE"
                 StreamerHolder.State.Starting -> LiveTheme.PendingText to "Starting…"
+                is StreamerHolder.State.Reconnecting ->
+                    LiveTheme.PendingText to "Reconnecting… (${streamerState.attempt})"
                 is StreamerHolder.State.Error -> LiveTheme.DangerText to "Off air"
                 StreamerHolder.State.Idle -> LiveTheme.TextMuted to "Off air"
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("●", color = statusColor, fontSize = 10.sp)
                 Text(statusLabel, color = statusColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                if (streamerState is StreamerHolder.State.Live) {
+                // The on-air timer measures the whole session, so it keeps counting through a reconnect.
+                if (streamerState is StreamerHolder.State.Live || streamerState is StreamerHolder.State.Reconnecting) {
                     Text(formatElapsed(elapsedSeconds), color = LiveTheme.TextPrimary, fontSize = 12.sp)
                 }
             }
