@@ -1,6 +1,7 @@
 package com.scorecast.app
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
@@ -87,6 +88,7 @@ object StreamerHolder {
 
     /** What [reconnect] needs to reopen the same broadcast. In memory only, like the key itself. */
     private class Session(
+        val context: Context,
         val ingestUrl: String,
         val streamKey: String,
         val mode: RecordingMode,
@@ -96,6 +98,7 @@ object StreamerHolder {
     }
     private var session: Session? = null
     private var reconnectJob: Job? = null
+    private var errorCollector: Job? = null
 
     @RequiresPermission(allOf = [Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO])
     suspend fun start(
@@ -110,51 +113,8 @@ object StreamerHolder {
         currentRecordingFile = recordingFile
         recordOnly = mode == RecordingMode.RECORD_ONLY
         try {
-            val cameraId = backCameraId(context)
-            val videoSourceFactory = CameraOverlayVideoSourceFactory(cameraId) { size ->
-                val state = GameStateHolder.state.value
-                ScoreboardOverlay.create(state, LogoHolder.logos.value, SportConfigLoader.getCached(state.sport), size)
-            }
-
-            val endpointFactory = when (mode) {
-                RecordingMode.STREAM_ONLY, RecordingMode.RECORD_ONLY -> DynamicEndpointFactory()
-                RecordingMode.STREAM_AND_RECORD -> CombineEndpointFactory(
-                    DynamicEndpointFactory(), DynamicEndpointFactory()
-                )
-            }
-
-            val s = SingleStreamer(
-                context = context.applicationContext,
-                audioSourceFactory = MicrophoneSourceFactory(),
-                videoSourceFactory = videoSourceFactory,
-                endpointFactory = endpointFactory,
-            )
-            s.setVideoConfig(VideoConfig(
-                startBitrate = StreamConfig.VIDEO_BITRATE,
-                resolution = StreamConfig.RESOLUTION,
-                fps = StreamConfig.FPS,
-            ))
-            s.setAudioConfig(AudioConfig(
-                startBitrate = StreamConfig.AUDIO_BITRATE,
-                sampleRate = StreamConfig.AUDIO_SAMPLE_RATE,
-                channelConfig = AudioFormat.CHANNEL_IN_STEREO,
-            ))
-            streamer = s
-
-            applyPreview()
-            applyFlip()
-
-            // Warm up the camera before opening the network connection: on this hardware, camera
-            // bring-up can take 150ms-1.5s+, and StreamPack only starts the camera as part of
-            // startStream() — which normally runs after open() already connected. Facebook's
-            // ingest was observed closing the connection while waiting for video data during that
-            // gap. Warming up first means real frames are already flowing by the time open()
-            // connects and startStream() attaches the encoder.
-            source()?.warmUp()
-
-            session = Session(ingestUrl, streamKey, mode, recordingFile)
-            scope.launch { s.throwableFlow.collect { t -> if (t != null) onStreamError(t) } }
-
+            session = Session(context.applicationContext, ingestUrl, streamKey, mode, recordingFile)
+            val s = createStreamer(context, mode)
             s.open(descriptor(ingestUrl, streamKey, mode, recordingFile))
             s.startStream()
             applyFlip()
@@ -165,6 +125,58 @@ object StreamerHolder {
         } catch (t: Throwable) {
             fail(t)
         }
+    }
+
+    /** Builds a streamer with the camera already running, ready for open(). Shared by [start] and
+     *  [reconnect], so a reconnect goes through exactly the path Go Live does. */
+    @RequiresPermission(allOf = [Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO])
+    private suspend fun createStreamer(context: Context, mode: RecordingMode): SingleStreamer {
+        val cameraId = backCameraId(context)
+        val videoSourceFactory = CameraOverlayVideoSourceFactory(cameraId) { size ->
+            val state = GameStateHolder.state.value
+            ScoreboardOverlay.create(state, LogoHolder.logos.value, SportConfigLoader.getCached(state.sport), size)
+        }
+
+        val endpointFactory = when (mode) {
+            RecordingMode.STREAM_ONLY, RecordingMode.RECORD_ONLY -> DynamicEndpointFactory()
+            RecordingMode.STREAM_AND_RECORD -> CombineEndpointFactory(
+                DynamicEndpointFactory(), DynamicEndpointFactory()
+            )
+        }
+
+        val s = SingleStreamer(
+            context = context.applicationContext,
+            audioSourceFactory = MicrophoneSourceFactory(),
+            videoSourceFactory = videoSourceFactory,
+            endpointFactory = endpointFactory,
+        )
+        s.setVideoConfig(VideoConfig(
+            startBitrate = StreamConfig.VIDEO_BITRATE,
+            resolution = StreamConfig.RESOLUTION,
+            fps = StreamConfig.FPS,
+        ))
+        s.setAudioConfig(AudioConfig(
+            startBitrate = StreamConfig.AUDIO_BITRATE,
+            sampleRate = StreamConfig.AUDIO_SAMPLE_RATE,
+            channelConfig = AudioFormat.CHANNEL_IN_STEREO,
+        ))
+        streamer = s
+
+        applyPreview()
+        applyFlip()
+
+        // Warm up the camera before opening the network connection: on this hardware, camera
+        // bring-up can take 150ms-1.5s+, and StreamPack only starts the camera as part of
+        // startStream() — which normally runs after open() already connected. Facebook's
+        // ingest was observed closing the connection while waiting for video data during that
+        // gap. Warming up first means real frames are already flowing by the time open()
+        // connects and startStream() attaches the encoder.
+        source()?.warmUp()
+        // A reconnect builds a new camera source, which would otherwise come back at 1x.
+        source()?.setZoomRatio(_zoomRatio.value)
+
+        errorCollector = scope.launch { s.throwableFlow.collect { t -> if (t != null) onStreamError(s, t) } }
+        return s
     }
 
     suspend fun stop() {
@@ -183,12 +195,19 @@ object StreamerHolder {
      *  set Error and then call stop(), whose `finally` immediately overwrote it with Idle, so the
      *  cause of a mid-broadcast failure was always discarded before any UI could read it. */
     private suspend fun teardown() {
-        val s = streamer ?: run { _liveStartedAtMs.value = 0L; return }
-        streamer = null
         session = null
         currentRecordingFile = null
         recordOnly = false
         _liveStartedAtMs.value = 0L
+        releaseStreamer()
+    }
+
+    /** Stops and releases the current streamer only, leaving the session's bookkeeping alone. */
+    private suspend fun releaseStreamer() {
+        val s = streamer ?: return
+        streamer = null
+        errorCollector?.cancel()
+        errorCollector = null
         try {
             s.stopStream()
             s.close()
@@ -233,9 +252,9 @@ object StreamerHolder {
      * amount of retrying fixes, so it still fails straight to [State.Error].
      */
     @Synchronized
-    private fun onStreamError(t: Throwable) {
-        // A null streamer means teardown is closing it, and errors from that are expected.
-        if (streamer == null) return
+    private fun onStreamError(source: SingleStreamer, t: Throwable) {
+        // Errors from a streamer that has been, or is being, released are expected.
+        if (source !== streamer) return
         when (_state.value) {
             // The retry loop owns errors raised by its own attempts.
             is State.Reconnecting -> return
@@ -250,17 +269,40 @@ object StreamerHolder {
         fail(t)
     }
 
-    /** Retries the dropped broadcast with exponential backoff until it is back on air, or gives
-     *  up after [RECONNECT_GIVE_UP_MS] and reports the last failure. */
+    /**
+     * Retries the dropped broadcast with exponential backoff until it is back on air, or gives
+     * up after [RECONNECT_GIVE_UP_MS] and reports the last failure.
+     *
+     * Every attempt runs on a freshly built streamer, exactly as Go Live does, and a failed one is
+     * released before the next. Reusing a streamer — closing and reopening it in place, or retrying
+     * open() on one whose earlier attempt failed — worked for stream-only, but in stream + record
+     * the video encoder then never gave the MP4 muxer a valid format ("csd0 too small"). The muxer
+     * waited forever and no video reached either output. The price is that the camera restarts on
+     * each attempt, so the preview blinks during an outage.
+     */
+    @SuppressLint("MissingPermission") // Granted before the first start; a reconnect needs nothing new.
     private suspend fun reconnect(cause: Throwable) {
+        val sess = session ?: return
         val giveUpAt = SystemClock.elapsedRealtime() + RECONNECT_GIVE_UP_MS
         var lastError = cause
         var attempt = 1
+        releaseStreamer()
         while (SystemClock.elapsedRealtime() < giveUpAt) {
             _state.value = State.Reconnecting(attempt)
             delay(RECONNECT_DELAYS_MS.getOrElse(attempt - 1) { RECONNECT_DELAYS_MS.last() })
+            // Stream + record closes the MP4 along with the connection, and reopening the same
+            // path would overwrite it, so each reconnect records into a new part file.
+            val partFile = sess.firstRecordingFile?.let { partFile(it, sess.part + 1) }
             try {
-                reopen()
+                val s = streamer ?: createStreamer(sess.context, sess.mode)
+                s.open(descriptor(sess.ingestUrl, sess.streamKey, sess.mode, partFile))
+                s.startStream()
+                if (partFile != null) {
+                    sess.part++
+                    currentRecordingFile = partFile
+                }
+                applyFlip()
+                applyPreview()
                 _state.value = State.Live
                 Log.i(TAG, "Reconnected on attempt $attempt")
                 return
@@ -269,42 +311,15 @@ object StreamerHolder {
             } catch (e: Throwable) {
                 Log.w(TAG, "Reconnect attempt $attempt failed", e)
                 lastError = e
+                // Don't leave an empty part behind for every failed attempt.
+                partFile?.delete()
+                releaseStreamer()
             }
             attempt++
         }
-        fail(lastError)
-    }
-
-    /**
-     * Closes the dead connection and opens it again on the same streamer, mirroring [start]'s
-     * warm-up → open → start order. stopStream() also stops the camera, so it is warmed up again.
-     *
-     * Stream + record goes through one [CombineEndpoint], which only opens with every descriptor
-     * at once. The MP4 therefore closes along with the RTMP connection, and reopening the same
-     * path would overwrite it, so each reconnect records into a new part file.
-     */
-    private suspend fun reopen() {
-        val s = streamer ?: throw CancellationException("Stream was stopped")
-        val sess = session ?: throw CancellationException("Stream was stopped")
-        runCatching { s.stopStream() }
-        runCatching { s.close() }
-
-        val partFile = sess.firstRecordingFile?.let { partFile(it, sess.part + 1) }
-        try {
-            source()?.warmUp()
-            s.open(descriptor(sess.ingestUrl, sess.streamKey, sess.mode, partFile))
-            s.startStream()
-        } catch (t: Throwable) {
-            // Don't leave an empty part behind for every failed attempt.
-            partFile?.delete()
-            throw t
-        }
-        if (partFile != null) {
-            sess.part++
-            currentRecordingFile = partFile
-        }
-        applyFlip()
-        applyPreview()
+        // The last attempt's own error would blame the stream key, which worked until the drop.
+        fail(lastError, "Lost the connection and couldn't get it back within " +
+            "${RECONNECT_GIVE_UP_MS / 60_000} minutes. Check the network, then tap Retry.")
     }
 
     private fun partFile(first: File, part: Int): File =
@@ -324,9 +339,8 @@ object StreamerHolder {
         ))
     }
 
-    private fun fail(t: Throwable) {
+    private fun fail(t: Throwable, message: String = describe(t)) {
         Log.e(TAG, "Stream error", t)
-        val message = describe(t)
         scope.launch {
             // Tear down first, then publish Error last, so nothing in the teardown path can
             // clobber it. State.Error is terminal until the operator acknowledges it via
@@ -359,6 +373,13 @@ object StreamerHolder {
                 "Timed out reaching the ingest server. Check the network connection."
             chain.any { it is ConnectException } ->
                 "Couldn't reach the ingest server. Check the ingest URL and the network."
+            // StreamPack's own state checks ("Endpoint is not opened", "Endpoint must be opened
+            // before starting stream") are what surface when the connection never came up, with
+            // the network cause swallowed.
+            chain.any { it is IllegalStateException || it is IllegalArgumentException } &&
+                chain.any { it.message?.contains("Endpoint") == true } ->
+                "Couldn't open the connection to the ingest server. Check the ingest URL, the " +
+                    "stream key and the network."
             else -> t.message ?: t.javaClass.simpleName
         }
     }
