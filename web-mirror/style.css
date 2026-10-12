@@ -334,6 +334,175 @@ button {
   font-size: 0.95rem;
 }
 
+/* ---- Responsive scoring screen ----
+   The 480px cap above suits the join form, but it also held the scoring screen to a phone-portrait
+   column on laptops and on phones turned sideways. While the scoring screen is showing, the cap is
+   lifted; app.js toggles `hidden` on the two screens, so :has() keys off that with no JS change.
+   Phone portrait is deliberately left exactly as it was. */
+main:has(#score-screen:not([hidden])) { max-width: none; }
+
+/* Laptops, desktops and tablets: fill the whole window and scale the controls with it. */
+@media (min-width: 700px) {
+  main:has(#score-screen:not([hidden])) {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  #score-screen:not([hidden]) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Period, clock and shot clock share one strip instead of stacking. */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .controls .period-row,
+  .controls .clock-row {
+    flex: 1 1 auto;
+    justify-content: center;
+    margin-bottom: 0;
+  }
+
+  .teams {
+    flex: 1;
+    gap: 16px;
+  }
+
+  .team-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: clamp(8px, 2vmin, 24px);
+    padding: clamp(16px, 3vmin, 40px);
+  }
+
+  .team-name-input {
+    max-width: 28ch;
+    margin-bottom: 0;
+    font-size: clamp(1rem, 2.6vmin, 1.6rem);
+  }
+
+  .score {
+    font-size: clamp(3rem, 16vmin, 11rem);
+    line-height: 1;
+    margin-bottom: 0;
+  }
+
+  .btn-row { gap: clamp(8px, 1.5vmin, 16px); }
+
+  .pill-btn {
+    min-width: clamp(64px, 10vmin, 128px);
+    min-height: clamp(56px, 9vmin, 104px);
+    font-size: clamp(1.15rem, 3vmin, 2rem);
+  }
+
+  .step-btn {
+    min-height: clamp(44px, 6vmin, 64px);
+    font-size: clamp(0.95rem, 2.2vmin, 1.3rem);
+  }
+
+  .clock-time { font-size: clamp(1.3rem, 4.5vmin, 2.8rem); }
+  .clock-label { font-size: clamp(0.85rem, 2vmin, 1.1rem); }
+}
+
+/* A phone on its side: little height, plenty of width. Everything has to fit on one screen, so the
+   title goes, padding tightens, and each team card becomes two rows — name + colour chip, then
+   score + buttons — instead of four stacked ones. Touch targets keep their full size. */
+@media (orientation: landscape) and (max-height: 500px) {
+  main:has(#score-screen:not([hidden])) {
+    padding: calc(8px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+  }
+
+  main:has(#score-screen:not([hidden])) h1 { display: none; }
+
+  .status-row { margin-bottom: 8px; }
+
+  /* Repeated from the wide block: a small phone on its side can be under 700px wide. */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .controls .period-row,
+  .controls .clock-row {
+    flex: 1 1 auto;
+    justify-content: center;
+    margin-bottom: 0;
+    padding: 4px 12px;
+    gap: 8px;
+  }
+
+  .teams { gap: 10px; margin-bottom: 8px; }
+
+  .team-card {
+    display: grid;
+    /* The score column sizes to the digits alone; the name spans over it, so a long team name
+       can't widen that column and squeeze the buttons. */
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "name   name    toggle"
+      "score  buttons buttons"
+      "colors colors  colors";
+    align-items: center;
+    gap: 6px 12px;
+    padding: 10px 12px;
+  }
+
+  /* Lets the chip and the swatch row be placed in the card's grid directly. */
+  .team-card .color-picker { display: contents; }
+
+  .team-card .team-name-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .team-name-input {
+    grid-area: name;
+    max-width: none;
+    margin: 0;
+    padding: 8px;
+    font-size: 1rem;
+  }
+
+  .color-toggle { grid-area: toggle; }
+  .color-row { grid-area: colors; }
+
+  .score {
+    grid-area: score;
+    font-size: clamp(2.5rem, 16vh, 4.5rem);
+    line-height: 1;
+    margin: 0;
+    min-width: 2ch;
+  }
+
+  .team-card > .btn-row { grid-area: buttons; justify-content: flex-start; }
+
+  /* Wide-screen sizing above scales with vmin, which here is the short side; hold the buttons at
+     the design minimum instead of letting them grow past what the height allows. */
+  .pill-btn { min-width: 64px; min-height: 56px; font-size: 1.15rem; padding: 10px 16px; }
+  .step-btn { min-height: 44px; font-size: 0.95rem; }
+  .clock-time { font-size: 1.3rem; }
+
+  .sets-row { padding: 8px 12px; }
+  .sets-readout { margin-top: 0; }
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     --bg: #f4f4f6;
