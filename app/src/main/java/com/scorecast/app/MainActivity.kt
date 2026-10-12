@@ -68,6 +68,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.Surface
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -478,7 +481,7 @@ private fun LiveOverlay(
     val context = LocalContext.current
     var showPairDialog by remember { mutableStateOf(false) }
     var showEndMatchConfirm by remember { mutableStateOf(false) }
-    var showMenuStub by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     var micMuted by remember { mutableStateOf(false) }
     val isRecording = remember(streamerState) { StreamerHolder.currentRecordingFile != null }
 
@@ -667,7 +670,7 @@ private fun LiveOverlay(
                             Text("🔗", fontSize = 16.sp)
                         }
                         Box(
-                            modifier = Modifier.size(44.dp).clickable { showMenuStub = true }
+                            modifier = Modifier.size(44.dp).clickable { showSettings = true }
                                 .semantics { contentDescription = "More options" },
                             contentAlignment = Alignment.Center,
                         ) {
@@ -884,13 +887,21 @@ private fun LiveOverlay(
         )
     }
 
-    if (showMenuStub) {
-        AlertDialog(
-            onDismissRequest = { showMenuStub = false },
-            title = { Text("Settings") },
-            text = { Text("Settings screen isn't built yet — coming in a later phase.") },
-            confirmButton = { TextButton(onClick = { showMenuStub = false }) { Text("OK") } },
-        )
+    if (showSettings) {
+        // Shown over the live screen rather than navigated to, so the stream, recording and
+        // scoring all keep running underneath.
+        Dialog(
+            onDismissRequest = { showSettings = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                SettingsScreen(
+                    onBack = { showSettings = false },
+                    backLabel = "← Back to match",
+                    matchInProgress = StreamerHolder.isStreaming,
+                )
+            }
+        }
     }
 
     if (showEndMatchConfirm) {

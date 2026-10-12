@@ -38,8 +38,13 @@ import kotlinx.coroutines.launch
 
 /** Settings — account status, update check, and local-data management. Not in the original spec
  *  (Appendix B1 only calls for the gear icon); scoped from a conversation with the owner. */
+/**
+ * @param matchInProgress true when opened over a live match (the in-game ⋮ menu). Installing an
+ *  update would close the app mid-broadcast, and deleting all recordings would delete the file
+ *  being recorded, so both are blocked until the match ends.
+ */
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, backLabel: String = "← Home", matchInProgress: Boolean = false) {
     val context = LocalContext.current
 
     Column(
@@ -48,7 +53,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             .padding(20.dp)
             .verticalScroll(rememberScrollState()),
     ) {
-        TextButton(onClick = onBack) { Text("← Home") }
+        TextButton(onClick = onBack) { Text(backLabel) }
         Spacer(Modifier.height(4.dp))
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(20.dp))
@@ -56,7 +61,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         SettingsSection("Account") { FacebookAccountRow() }
         Spacer(Modifier.height(24.dp))
 
-        SettingsSection("Updates") { UpdatesRow() }
+        SettingsSection("Updates") { UpdatesRow(matchInProgress) }
         Spacer(Modifier.height(24.dp))
 
         SettingsSection("Data") {
@@ -64,9 +69,15 @@ fun SettingsScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             DeleteAllMatchesRow(context)
             Spacer(Modifier.height(12.dp))
-            DeleteAllRecordingsRow(context)
+            DeleteAllRecordingsRow(context, matchInProgress)
         }
     }
+}
+
+@Composable
+private fun MatchInProgressNote(text: String) {
+    Spacer(Modifier.height(4.dp))
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -118,7 +129,7 @@ private fun FacebookAccountRow() {
 }
 
 @Composable
-private fun UpdatesRow() {
+private fun UpdatesRow(matchInProgress: Boolean) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var versionName by remember { mutableStateOf("") }
@@ -141,7 +152,7 @@ private fun UpdatesRow() {
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Button(
-                enabled = !downloading,
+                enabled = !downloading && !matchInProgress,
                 onClick = {
                     if (!context.packageManager.canRequestPackageInstalls()) {
                         context.startActivity(
@@ -180,6 +191,7 @@ private fun UpdatesRow() {
                 CircularProgressIndicator(modifier = Modifier.height(20.dp))
             }
         }
+        if (matchInProgress) MatchInProgressNote("End the match to install the update.")
         updateError?.let {
             Spacer(Modifier.height(8.dp))
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -289,7 +301,7 @@ private fun DeleteAllMatchesRow(context: android.content.Context) {
 }
 
 @Composable
-private fun DeleteAllRecordingsRow(context: android.content.Context) {
+private fun DeleteAllRecordingsRow(context: android.content.Context, matchInProgress: Boolean) {
     var showConfirm by remember { mutableStateOf(false) }
     var deleted by remember { mutableStateOf(false) }
 
@@ -299,7 +311,7 @@ private fun DeleteAllRecordingsRow(context: android.content.Context) {
     val totalMb = remember(files) { files.sumOf { it.length() } / (1024.0 * 1024.0) }
 
     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        OutlinedButton(onClick = { showConfirm = true }, enabled = count > 0) {
+        OutlinedButton(onClick = { showConfirm = true }, enabled = count > 0 && !matchInProgress) {
             Text("Delete all recordings")
         }
         if (deleted) {
@@ -307,6 +319,7 @@ private fun DeleteAllRecordingsRow(context: android.content.Context) {
             Text("Deleted", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+    if (matchInProgress) MatchInProgressNote("End the match to delete recordings.")
 
     if (showConfirm) {
         AlertDialog(
