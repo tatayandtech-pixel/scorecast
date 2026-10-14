@@ -1,8 +1,15 @@
 package com.scorecast.app
 
 import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import org.json.JSONObject
 import java.io.File
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
 /** A logged-in Facebook user, as returned by the external-browser OAuth flow (Phase 8). */
 data class FacebookSession(
@@ -22,28 +29,40 @@ data class RememberedPage(val id: String, val name: String)
 
 /**
  * Persists the Facebook session across launches, matching [RecentTargetsStore]'s file-per-concern
- * JSON-in-filesDir pattern.
+ * pattern — except that the session, a bearer credential, is encrypted at rest with an Android
+ * Keystore key (spec §11). The key is generated inside the Keystore and can't be exported, so the
+ * file is useless off this phone. Spec §11 names EncryptedSharedPreferences; its library
+ * (androidx.security:security-crypto) has since been deprecated by Google in favour of using the
+ * Keystore directly, which is what this does, with no new dependency.
  *
- * Storage is app-private internal storage, which is where the Facebook SDK kept this same token
- * before the external-browser flow replaced it, so this is not a downgrade. It is still a bearer
- * credential: never log it, never copy it into a StreamTarget, never let it reach Firebase.
+ * Still: never log the token, never copy it into a StreamTarget, never let it reach Firebase.
  */
 object FacebookSessionStore {
-    private const val SESSION_FILE = "facebook_session.json"
+    private const val SESSION_FILE = "facebook_session.bin"
+    /** The plaintext file builds before 2026-10-15 wrote; deleted on sight, never read. */
+    private const val LEGACY_SESSION_FILE = "facebook_session.json"
     private const val PENDING_FILE = "facebook_pending_auth.json"
+    private const val KEY_ALIAS = "scorecast_facebook_session"
+    private const val TRANSFORMATION = "AES/GCM/NoPadding"
+    private const val IV_BYTES = 12
 
     fun load(context: Context): FacebookSession? {
+        runCatching { File(context.filesDir, LEGACY_SESSION_FILE).delete() }
         val file = File(context.filesDir, SESSION_FILE)
         if (!file.exists()) return null
         return runCatching {
-            val o = JSONObject(file.readText())
+            val o = JSONObject(decrypt(file.readBytes()))
             FacebookSession(
                 accessToken = o.getString("accessToken"),
                 userId = o.getString("userId"),
                 userName = o.optString("userName", ""),
                 expiresAtMs = o.optLong("expiresAtMs", 0L),
             )
-        }.getOrNull()
+        }.getOrElse {
+            // Unreadable (e.g. the key is gone): signed out, rather than stuck on a dead file.
+            file.delete()
+            null
+        }
     }
 
     fun save(context: Context, session: FacebookSession) {
@@ -53,12 +72,13 @@ object FacebookSessionStore {
             put("userName", session.userName)
             put("expiresAtMs", session.expiresAtMs)
         }
-        runCatching { File(context.filesDir, SESSION_FILE).writeText(o.toString()) }
+        runCatching { File(context.filesDir, SESSION_FILE).writeBytes(encrypt(o.toString())) }
     }
 
     /** Clears the session and the remembered Page together — signing out should leave nothing. */
     fun clear(context: Context) {
         runCatching { File(context.filesDir, SESSION_FILE).delete() }
+        runCatching { File(context.filesDir, LEGACY_SESSION_FILE).delete() }
         runCatching { File(context.filesDir, PENDING_FILE).delete() }
     }
 
@@ -118,5 +138,32 @@ object FacebookSessionStore {
         }.getOrNull()
         runCatching { file.delete() }
         return state
+    }
+
+    /** IV followed by the AES-GCM ciphertext (which carries its own authentication tag). */
+    private fun encrypt(plain: String): ByteArray {
+        val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key()) }
+        return cipher.iv + cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
+    }
+
+    private fun decrypt(blob: ByteArray): String {
+        val cipher = Cipher.getInstance(TRANSFORMATION).apply {
+            init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, blob, 0, IV_BYTES))
+        }
+        return String(cipher.doFinal(blob, IV_BYTES, blob.size - IV_BYTES), Charsets.UTF_8)
+    }
+
+    private fun key(): SecretKey {
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (store.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
+            init(
+                KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build()
+            )
+        }.generateKey()
     }
 }
