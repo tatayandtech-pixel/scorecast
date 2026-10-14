@@ -22,7 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
-/** Spec Appendix B6 — wizard step 4/4: destination key entry, sponsor logos, break graphics (v2, disabled). */
+/** Spec Appendix B6 — wizard step 4/4: destination key entry, sponsor logos, the intro clip (beyond
+ *  spec, owner request), break graphics (v2, disabled). */
 @Composable
 fun WizardDestinationScreen(
     target: StreamTarget,
@@ -114,6 +115,11 @@ fun WizardDestinationScreen(
             Text("Sponsor logos (${logos.size}/6)", style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(6.dp))
             LogoPanel()
+
+            Spacer(Modifier.height(20.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(12.dp))
+            IntroClipPanel()
 
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()

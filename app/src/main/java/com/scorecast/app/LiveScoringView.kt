@@ -326,6 +326,9 @@ fun LiveBottomBar(
     onPeriodPlus: () -> Unit,
     batteryPct: Int,
     onShare: () -> Unit,
+    /** Seconds of intro clip left while one is on air, else null. */
+    introSecondsLeft: Long?,
+    onSkipIntro: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var elapsedSeconds by remember { mutableLongStateOf(0L) }
@@ -386,23 +389,36 @@ fun LiveBottomBar(
 
         Spacer(Modifier.weight(1f))
 
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Box(
-                modifier = Modifier.size(44.dp).clip(CircleShape).background(LiveTheme.CardBackground)
-                    .clickable(onClick = onPeriodMinus)
-                    .semantics { contentDescription = "Previous $periodLabel" },
-                contentAlignment = Alignment.Center,
-            ) { Text("−", color = LiveTheme.TextPrimary, fontSize = 12.sp) }
-            Text(
-                "$period / $maxPeriod  ${periodLabel.uppercase()}/PERIOD",
-                color = LiveTheme.TextPrimary, fontSize = 11.sp, textAlign = TextAlign.Center,
-            )
-            Box(
-                modifier = Modifier.size(44.dp).clip(CircleShape).background(LiveTheme.CardBackground)
-                    .clickable(onClick = onPeriodPlus)
-                    .semantics { contentDescription = "Next $periodLabel" },
-                contentAlignment = Alignment.Center,
-            ) { Text("+", color = LiveTheme.TextPrimary, fontSize = 12.sp) }
+        if (introSecondsLeft != null) {
+            // In the period stepper's place for the length of the intro: the clip opens the
+            // broadcast, before there is a period to step, and this screen has no spare height
+            // for a banner (the score buttons would shift under the operator's thumb).
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "▶ INTRO ${introSecondsLeft / 60}:%02d left".format(introSecondsLeft % 60),
+                    color = LiveTheme.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                )
+                LiveSmallButton("Skip intro", onSkipIntro)
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Box(
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(LiveTheme.CardBackground)
+                        .clickable(onClick = onPeriodMinus)
+                        .semantics { contentDescription = "Previous $periodLabel" },
+                    contentAlignment = Alignment.Center,
+                ) { Text("−", color = LiveTheme.TextPrimary, fontSize = 12.sp) }
+                Text(
+                    "$period / $maxPeriod  ${periodLabel.uppercase()}/PERIOD",
+                    color = LiveTheme.TextPrimary, fontSize = 11.sp, textAlign = TextAlign.Center,
+                )
+                Box(
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(LiveTheme.CardBackground)
+                        .clickable(onClick = onPeriodPlus)
+                        .semantics { contentDescription = "Next $periodLabel" },
+                    contentAlignment = Alignment.Center,
+                ) { Text("+", color = LiveTheme.TextPrimary, fontSize = 12.sp) }
+            }
         }
 
         Spacer(Modifier.weight(1f))

@@ -18,7 +18,6 @@ import io.github.thibaultbee.streampack.core.configuration.mediadescriptor.UriMe
 import io.github.thibaultbee.streampack.core.elements.endpoints.CombineEndpoint
 import io.github.thibaultbee.streampack.core.elements.endpoints.CombineEndpointFactory
 import io.github.thibaultbee.streampack.core.elements.endpoints.DynamicEndpointFactory
-import io.github.thibaultbee.streampack.core.elements.sources.audio.audiorecord.MicrophoneSourceFactory
 import io.github.thibaultbee.streampack.core.streamers.single.AudioConfig
 import io.github.thibaultbee.streampack.core.streamers.single.SingleStreamer
 import io.github.thibaultbee.streampack.core.streamers.single.VideoConfig
@@ -33,6 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.EOFException
 import java.io.File
 import java.net.ConnectException
@@ -114,7 +114,15 @@ object StreamerHolder {
         recordOnly = mode == RecordingMode.RECORD_ONLY
         try {
             session = Session(context.applicationContext, ingestUrl, streamKey, mode, recordingFile)
+            // Read before the camera comes up, so nothing about the intro waits on disk once live.
+            // Once per match: a Retry after a failure must not replay it on top of the game.
+            val intro = IntroClipStore.clip.value
+                ?.takeIf { !IntroPlayback.playedThisMatch }
+                ?.let { IntroPlayback.prepare(it) }
             val s = createStreamer(context, mode)
+            // Black from the very first frame on air until the clip's first frame, rather than a
+            // glimpse of the camera.
+            if (intro != null) source()?.showIntro(intro.aspect)
             s.open(descriptor(ingestUrl, streamKey, mode, recordingFile))
             s.startStream()
             applyFlip()
@@ -122,6 +130,8 @@ object StreamerHolder {
             _state.value = State.Live
             _liveStartedAtMs.value = System.currentTimeMillis()
             Log.i(TAG, "Started: mode=$mode")
+            // Only now: frames drawn before the encoder is streaming never reach the broadcast.
+            if (intro != null) source()?.let { IntroPlayback.start(intro, it) }
         } catch (t: Throwable) {
             fail(t)
         }
@@ -146,7 +156,8 @@ object StreamerHolder {
 
         val s = SingleStreamer(
             context = context.applicationContext,
-            audioSourceFactory = MicrophoneSourceFactory(),
+            // The stock mic, with the intro's sound swapped in while it plays.
+            audioSourceFactory = IntroAudioSourceFactory(),
             videoSourceFactory = videoSourceFactory,
             endpointFactory = endpointFactory,
         )
@@ -182,6 +193,8 @@ object StreamerHolder {
     suspend fun stop() {
         reconnectJob?.cancelAndJoin()
         teardown()
+        // End Match: the next match opens with the intro again.
+        IntroPlayback.newMatch()
         _state.value = State.Idle
     }
 
@@ -208,6 +221,10 @@ object StreamerHolder {
         streamer = null
         errorCollector?.cancel()
         errorCollector = null
+        // The intro decoder renders into this streamer's compositor, which is about to go. A drop
+        // mid-intro ends the intro rather than resuming it: every reconnect attempt builds a new
+        // compositor, and resuming would start the next part file partway through the clip.
+        withContext(Dispatchers.IO) { IntroPlayback.stopAndWait() }
         try {
             s.stopStream()
             s.close()

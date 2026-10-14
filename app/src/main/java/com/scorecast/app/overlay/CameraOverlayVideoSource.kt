@@ -85,6 +85,17 @@ class CameraOverlayVideoSource internal constructor(
     suspend fun getZoomRange(): android.util.Range<Float>? =
         cameraSource?.settings?.zoom?.availableRatioRange
 
+    // --- Intro clip (see IntroPlayback) ---
+
+    /** Where an intro clip's decoder renders; null until capture has started. */
+    val introSurface: Surface? get() = compositor?.clipInputSurface
+
+    val cameraLatencyNs: Long get() = compositor?.cameraLatencyNs ?: 0L
+
+    fun showIntro(aspect: Float) { compositor?.showIntro(aspect) }
+
+    fun hideIntro() { compositor?.hideIntro() }
+
     // --- ISurfaceSourceInternal ---
 
     override suspend fun getOutput(): Surface? = outputSurface

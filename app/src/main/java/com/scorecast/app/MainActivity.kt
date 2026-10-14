@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -101,6 +102,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         SportConfigLoader.loadAll(this)
         GameStateHolder.update { copy(scoreboardLight = ScoreboardStylePrefs.isLight(this@MainActivity)) }
+        IntroClipStore.load(this)
         setContent {
             ScoreCastTheme {
                 AppRoot()
@@ -435,6 +437,8 @@ private fun SetupPanel(
                 HorizontalDivider()
                 LogoPanel()
                 HorizontalDivider()
+                IntroClipPanel()
+                HorizontalDivider()
                 RecordingsPanel()
             } else {
                 Spacer(Modifier.height(4.dp))
@@ -492,6 +496,18 @@ private fun LiveOverlay(
     }
     val batteryPct = rememberBatteryPercent()
 
+    // The intro clip's countdown while it is on air (IntroPlayback), shown in both layouts.
+    val introState by IntroPlayback.state.collectAsState()
+    var introSecondsLeft by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(introState) {
+        val playing = introState as? IntroPlayback.State.Playing
+        while (playing != null) {
+            introSecondsLeft = ((playing.endsAtNanos - System.nanoTime() + 999_999_999L) / 1_000_000_000L).coerceAtLeast(0L)
+            delay(250)
+        }
+        introSecondsLeft = null
+    }
+
     if (fullscreenVideo) {
         // Fullscreen mode, laid out to match the owner's reference photo: video-status chips
         // bottom-left, exit-fullscreen top-end, a compact light/dark toggle for the burned-in
@@ -530,6 +546,25 @@ private fun LiveOverlay(
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
                 onClick = onToggleFullscreen,
             )
+            // Top-centre is the one free spot here, and while the intro plays the burned-in logos
+            // and scoreboard are off anyway. Not burned in — the operator's preview only.
+            introSecondsLeft?.let { left ->
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 12.dp)
+                        .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+                        .clickable { IntroPlayback.skip() }
+                        .defaultMinSize(minHeight = 44.dp)
+                        .padding(horizontal = 12.dp)
+                        .semantics { contentDescription = "Skip intro" },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("▶ Intro ${left / 60}:%02d left".format(left % 60), style = MaterialTheme.typography.labelLarge)
+                    Text("Skip", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                }
+            }
             FullscreenCircleButton(
                 if (gameState.scoreboardLight) "☀" else "🌙",
                 contentDescription = if (gameState.scoreboardLight) "Switch scoreboard to dark background" else "Switch scoreboard to light background",
@@ -817,6 +852,8 @@ private fun LiveOverlay(
                             )
                         )
                     },
+                    introSecondsLeft = introSecondsLeft,
+                    onSkipIntro = { IntroPlayback.skip() },
                 )
                 Spacer(Modifier.height(8.dp))
             }

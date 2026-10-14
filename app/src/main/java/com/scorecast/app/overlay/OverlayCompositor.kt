@@ -13,6 +13,7 @@ import android.opengl.GLES20
 import android.opengl.GLUtils
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Log
 import android.util.Size
 import android.view.Surface
@@ -20,6 +21,7 @@ import com.scorecast.app.StreamConfig
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import kotlin.math.abs
 
 /**
  * The Phase 1 burn-in engine.
@@ -70,6 +72,26 @@ class OverlayCompositor(
     lateinit var cameraInputSurface: Surface
         private set
 
+    // Intro clip input: IntroPlayback's decoder renders here, and while [introActive] it is drawn
+    // instead of the camera. The camera keeps running underneath and stays the frame clock, so the
+    // cut back is instant and the capture session is never touched.
+    private var clipTexId = 0
+    private lateinit var clipSurfaceTexture: SurfaceTexture
+    lateinit var clipInputSurface: Surface
+        private set
+    private val clipTexMatrix = FloatArray(16)
+    private var clipFrameLatched = false
+    private var introActive = false
+    private var introAspect = 16f / 9f
+    private val clipQuadPos = floatBuffer(FloatArray(8))
+    private val clipTexCoords = floatBuffer(floatArrayOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f))
+
+    /** How old a camera frame is when it is drawn: its timestamp is the exposure, so frames reach
+     *  the encoder stamped this far in the past. IntroPlayback delays the clip's picture by it so
+     *  the picture lands on the same timestamps as the clip's sound. */
+    @Volatile var cameraLatencyNs = 0L
+        private set
+
     // Overlay
     private var overlayTexId = 0
     private var overlayReady = false
@@ -106,7 +128,27 @@ class OverlayCompositor(
             makeCurrent(ensureOutputEglSurface())
             initPrograms()
             initCameraInput()
+            initClipInput()
             initOverlay()
+        }
+    }
+
+    /** Draws the intro clip ([clipInputSurface]) instead of the camera, aspect-fit to [aspect]
+     *  (display width / height) and without the scoreboard. Black until its first frame arrives. */
+    fun showIntro(aspect: Float) {
+        handler.post {
+            if (released) return@post
+            introActive = true
+            introAspect = aspect
+            clipFrameLatched = false
+        }
+    }
+
+    fun hideIntro() {
+        handler.post {
+            if (released) return@post
+            introActive = false
+            clipFrameLatched = false
         }
     }
 
@@ -177,6 +219,12 @@ class OverlayCompositor(
                 cameraSurfaceTexture.release()
             }
             if (::cameraInputSurface.isInitialized) cameraInputSurface.release()
+            if (::clipSurfaceTexture.isInitialized) {
+                clipSurfaceTexture.setOnFrameAvailableListener(null)
+                clipSurfaceTexture.release()
+            }
+            if (::clipInputSurface.isInitialized) clipInputSurface.release()
+            if (clipTexId != 0) GLES20.glDeleteTextures(1, intArrayOf(clipTexId), 0)
             if (overlayTexId != 0) GLES20.glDeleteTextures(1, intArrayOf(overlayTexId), 0)
             if (cameraTexId != 0) GLES20.glDeleteTextures(1, intArrayOf(cameraTexId), 0)
             if (outputEglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, outputEglSurface)
@@ -199,6 +247,27 @@ class OverlayCompositor(
         handler.post { drawFrame() }
     }
 
+    // A clip frame is latched the moment it arrives rather than on the next camera frame: before
+    // Android 10 a SurfaceTexture doesn't drop frames its consumer hasn't taken, so a clip faster
+    // than the camera would back up into the decoder and play slow. Its own try/catch, so a clip
+    // problem can never cost the camera-stamped present in drawFrame().
+    private val onClipFrame = SurfaceTexture.OnFrameAvailableListener {
+        if (released) return@OnFrameAvailableListener
+        handler.post { latchClipFrame() }
+    }
+
+    private fun latchClipFrame() {
+        if (released) return
+        try {
+            makeCurrent(outputEglSurface)
+            clipSurfaceTexture.updateTexImage()
+            clipSurfaceTexture.getTransformMatrix(clipTexMatrix)
+            clipFrameLatched = true
+        } catch (t: Throwable) {
+            Log.e(TAG, "latchClipFrame failed", t)
+        }
+    }
+
     private fun drawFrame() {
         if (released) return
         try {
@@ -210,6 +279,7 @@ class OverlayCompositor(
             makeCurrent(outputEglSurface)
             cameraSurfaceTexture.updateTexImage()
             cameraSurfaceTexture.getTransformMatrix(texMatrix)
+            trackCameraLatency(cameraSurfaceTexture.timestamp)
             if (!usingPlaceholderOutput) {
                 renderComposite(size.width, size.height)
                 EGLExt.eglPresentationTimeANDROID(
@@ -234,6 +304,13 @@ class OverlayCompositor(
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
+        if (introActive) {
+            // The intro clip, full-frame and clean (no scoreboard), on the black of the clear.
+            if (clipFrameLatched) drawClip(viewportWidth, viewportHeight)
+            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0)
+            return
+        }
+
         // Camera (external OES) full-frame.
         GLES20.glUseProgram(oesProgram)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
@@ -256,6 +333,39 @@ class OverlayCompositor(
             GLES20.glDisable(GLES20.GL_BLEND)
         }
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0)
+    }
+
+    /** The clip aspect-fit into the viewport. Plain texture coords: the clip's own SurfaceTexture
+     *  matrix already carries its orientation (the decoder applies the container's rotation), and
+     *  it must not pick up the camera's rotation/flip, which live only in [cameraTexCoords]. */
+    private fun drawClip(viewportWidth: Int, viewportHeight: Int) {
+        val viewAspect = viewportWidth.toFloat() / viewportHeight
+        val sx = if (introAspect > viewAspect) 1f else introAspect / viewAspect
+        val sy = if (introAspect > viewAspect) viewAspect / introAspect else 1f
+        // BL, BR, TL, TR — the same order as fullQuadPos.
+        clipQuadPos.put(0, -sx).put(1, -sy).put(2, sx).put(3, -sy)
+            .put(4, -sx).put(5, sy).put(6, sx).put(7, sy)
+        GLES20.glUseProgram(oesProgram)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, clipTexId)
+        GLES20.glUniformMatrix4fv(oesMatrixLoc, 1, false, clipTexMatrix, 0)
+        vertexAttrib(oesPosLoc, clipQuadPos, 2)
+        vertexAttrib(oesTexLoc, clipTexCoords, 2)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+    }
+
+    /**
+     * Updates [cameraLatencyNs] from the frame just latched. Camera timestamps are on the realtime
+     * or the monotonic clock depending on the device (SENSOR_INFO_TIMESTAMP_SOURCE); the right one
+     * is whichever the frame is a plausible few tens of ms old on. Smoothed, since one frame's
+     * delivery jitter shouldn't move the intro's picture.
+     */
+    private fun trackCameraLatency(timestampNs: Long) {
+        val sinceRealtime = SystemClock.elapsedRealtimeNanos() - timestampNs
+        val sinceUptime = System.nanoTime() - timestampNs
+        val latency = if (abs(sinceRealtime) < abs(sinceUptime)) sinceRealtime else sinceUptime
+        if (latency !in 0..MAX_PLAUSIBLE_LATENCY_NS) return
+        cameraLatencyNs = if (cameraLatencyNs == 0L) latency else (cameraLatencyNs * 7 + latency) / 8
     }
 
     // ---- setup (GL thread) ----
@@ -325,6 +435,16 @@ class OverlayCompositor(
             setOnFrameAvailableListener(onFrame, handler)
         }
         cameraInputSurface = Surface(cameraSurfaceTexture)
+    }
+
+    // Created up front with the camera input, idle unless an intro plays; no buffers are allocated
+    // until a decoder connects to it.
+    private fun initClipInput() {
+        clipTexId = genTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES)
+        clipSurfaceTexture = SurfaceTexture(clipTexId).apply {
+            setOnFrameAvailableListener(onClipFrame, handler)
+        }
+        clipInputSurface = Surface(clipSurfaceTexture)
     }
 
     private fun initOverlay() {
@@ -407,6 +527,7 @@ class OverlayCompositor(
 
     companion object {
         private const val TAG = "OverlayCompositor"
+        private const val MAX_PLAUSIBLE_LATENCY_NS = 500_000_000L
 
         private const val VERTEX_SHADER = """
             attribute vec4 aPos;
