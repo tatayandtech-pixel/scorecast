@@ -11,10 +11,10 @@ import android.util.Size
  */
 object StreamConfig {
 
-    /** 720p30 @ 4 Mbps — within Facebook Live's recommended ceiling and fine for YouTube too. */
-    val RESOLUTION = Size(1280, 720)
+    /** Every preset is 16:9; the UI sizes the preview from this, the encoder from [VideoQuality]. */
+    const val ASPECT_RATIO = 16f / 9f
+    /** The camera's ceiling on the phones in use (their AE ranges stop at 30), so no 60 fps preset. */
     const val FPS = 30
-    const val VIDEO_BITRATE = 4_000_000
     const val AUDIO_BITRATE = 128_000
     const val AUDIO_SAMPLE_RATE = 44_100
 
@@ -50,4 +50,15 @@ object StreamConfig {
      * transform alone doesn't supply. The operator can cycle this live from the UI ("Rotate 90°").
      */
     const val CAMERA_ROTATION_DEGREES = 90
+}
+
+/**
+ * Picked per match on wizard step 4 (owner request, 2026-10-15: best quality by default). There is
+ * no adaptive bitrate over RTMP on StreamPack 3.1.2, so a stream either fits the venue's upload or
+ * stalls — hence a choice rather than a silent upgrade. 6 Mbps sits inside every supported
+ * platform's 1080p30 ceiling, Twitch's 6 Mbps cap being the lowest.
+ */
+enum class VideoQuality(val label: String, val resolution: Size, val bitrate: Int) {
+    HIGH("High · 1080p", Size(1920, 1080), 6_000_000),
+    STANDARD("Standard · 720p", Size(1280, 720), 4_000_000),
 }

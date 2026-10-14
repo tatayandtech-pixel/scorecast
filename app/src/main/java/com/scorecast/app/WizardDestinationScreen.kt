@@ -1,7 +1,14 @@
 package com.scorecast.app
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -108,6 +115,35 @@ fun WizardDestinationScreen(
                     }
                 }
             }
+
+            Spacer(Modifier.height(20.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(12.dp))
+            Text("Video quality", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                VideoQuality.entries.forEach { q ->
+                    val selected = target.quality == q
+                    OutlinedButton(
+                        onClick = { onTargetChange(target.copy(quality = q)) },
+                        modifier = Modifier.height(44.dp).semantics { this.selected = selected },
+                        colors = if (selected) ButtonDefaults.outlinedButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        ) else ButtonDefaults.outlinedButtonColors(),
+                    ) { Text(q.label, fontSize = 12.sp) }
+                }
+            }
+            Text(
+                // There's no automatic step-down mid-stream, so say up front what High needs.
+                if (target.quality == VideoQuality.HIGH) {
+                    "Sharpest picture. Needs a strong, steady upload (about 8 Mbps) — use Standard on weak venue Wi-Fi or mobile data."
+                } else {
+                    "Steadier on weak venue Wi-Fi or mobile data."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
 
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()

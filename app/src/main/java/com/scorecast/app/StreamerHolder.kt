@@ -6,6 +6,8 @@ import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioFormat
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
 import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
@@ -93,6 +95,7 @@ object StreamerHolder {
         val streamKey: String,
         val mode: RecordingMode,
         val firstRecordingFile: File?,
+        val quality: VideoQuality,
     ) {
         var part = 1
     }
@@ -107,19 +110,20 @@ object StreamerHolder {
         streamKey: String,
         mode: RecordingMode = RecordingMode.STREAM_ONLY,
         recordingFile: File? = null,
+        quality: VideoQuality = VideoQuality.HIGH,
     ) {
         if (streamer != null) return
         _state.value = State.Starting
         currentRecordingFile = recordingFile
         recordOnly = mode == RecordingMode.RECORD_ONLY
         try {
-            session = Session(context.applicationContext, ingestUrl, streamKey, mode, recordingFile)
+            session = Session(context.applicationContext, ingestUrl, streamKey, mode, recordingFile, quality)
             // Read before the camera comes up, so nothing about the intro waits on disk once live.
             // Once per match: a Retry after a failure must not replay it on top of the game.
             val intro = IntroClipStore.clip.value
                 ?.takeIf { !IntroPlayback.playedThisMatch }
                 ?.let { IntroPlayback.prepare(it) }
-            val s = createStreamer(context, mode)
+            val s = createStreamer(context, mode, quality)
             // Black from the very first frame on air until the clip's first frame, rather than a
             // glimpse of the camera.
             if (intro != null) source()?.showIntro(intro.aspect)
@@ -140,7 +144,7 @@ object StreamerHolder {
     /** Builds a streamer with the camera already running, ready for open(). Shared by [start] and
      *  [reconnect], so a reconnect goes through exactly the path Go Live does. */
     @RequiresPermission(allOf = [Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO])
-    private suspend fun createStreamer(context: Context, mode: RecordingMode): SingleStreamer {
+    private suspend fun createStreamer(context: Context, mode: RecordingMode, quality: VideoQuality): SingleStreamer {
         val cameraId = backCameraId(context)
         val videoSourceFactory = CameraOverlayVideoSourceFactory(cameraId) { size ->
             val state = GameStateHolder.state.value
@@ -162,9 +166,16 @@ object StreamerHolder {
             endpointFactory = endpointFactory,
         )
         s.setVideoConfig(VideoConfig(
-            startBitrate = StreamConfig.VIDEO_BITRATE,
-            resolution = StreamConfig.RESOLUTION,
+            startBitrate = quality.bitrate,
+            resolution = quality.resolution,
             fps = StreamConfig.FPS,
+            // Constant bitrate. The Redmi's encoder defaulted to variable rate and overspent
+            // badly: a steady ~9.9 Mbps against 6 at 1080p, and 23-37 Mbps for ~5 s at the cut from
+            // a simple intro clip to the noisy camera. A live upload can't absorb either; a file
+            // could. Left off on StreamPack's fallback attempt, for an encoder without CBR.
+            customize = { requestFallback ->
+                if (!requestFallback) setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+            },
         ))
         s.setAudioConfig(AudioConfig(
             startBitrate = StreamConfig.AUDIO_BITRATE,
@@ -311,7 +322,7 @@ object StreamerHolder {
             // path would overwrite it, so each reconnect records into a new part file.
             val partFile = sess.firstRecordingFile?.let { partFile(it, sess.part + 1) }
             try {
-                val s = streamer ?: createStreamer(sess.context, sess.mode)
+                val s = streamer ?: createStreamer(sess.context, sess.mode, sess.quality)
                 s.open(descriptor(sess.ingestUrl, sess.streamKey, sess.mode, partFile))
                 s.startStream()
                 if (partFile != null) {

@@ -8,11 +8,12 @@ import android.graphics.RectF
 
 /**
  * Normalises a picked logo (owner request): the plain background around it is made transparent,
- * then the logo is fitted, whole and centred, onto a transparent [SIZE]×[SIZE] canvas. 180px is
- * also about the width the overlay draws a logo at on a 720p frame (14% of 1280).
+ * then the logo is fitted, whole and centred, onto a transparent [SIZE]×[SIZE] canvas. 270px is
+ * about the width the overlay draws a logo at on a 1080p frame (14% of 1920), so High quality
+ * doesn't upscale it; at 720p it is drawn smaller, which costs nothing.
  */
 object LogoProcessor {
-    const val SIZE = 180
+    const val SIZE = 270
 
     // How close (RGB distance) a pixel must be to the background colour to count as background,
     // and how much of the image's border must be that colour before we trust there is a plain

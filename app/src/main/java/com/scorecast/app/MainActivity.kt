@@ -246,6 +246,7 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
     var ingestUrl     by rememberSaveable { mutableStateOf(initialTarget.ingestUrl) }
     var streamKey     by rememberSaveable { mutableStateOf(initialTarget.streamKey) }
     var recordingMode by rememberSaveable { mutableStateOf(initialTarget.mode) }
+    val quality = initialTarget.quality
     var fullscreenVideo by rememberSaveable { mutableStateOf(false) }
     var startRequested by remember { mutableStateOf(false) }
     var surfaceViewRef by remember { mutableStateOf<SurfaceView?>(null) }
@@ -270,14 +271,14 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
                  (result[Manifest.permission.RECORD_AUDIO] == true || hasPermission(context, Manifest.permission.RECORD_AUDIO))
         if (startRequested && ok) {
             startRequested = false
-            launchStream(context, ingestUrl, streamKey, recordingMode)
+            launchStream(context, ingestUrl, streamKey, recordingMode, quality)
         }
     }
 
     val onGoLive: () -> Unit = {
         if (hasPermission(context, Manifest.permission.CAMERA) &&
             hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
-            launchStream(context, ingestUrl, streamKey, recordingMode)
+            launchStream(context, ingestUrl, streamKey, recordingMode, quality)
         } else {
             startRequested = true
             permissionLauncher.launch(permissions)
@@ -299,7 +300,7 @@ private fun StreamScreen(onExit: () -> Unit, initialTarget: StreamTarget = Strea
         // re-running the factory lambda.
         AndroidView(
             modifier = if (videoConstrained) {
-                Modifier.fillMaxHeight(0.38f).aspectRatio(StreamConfig.RESOLUTION.width / StreamConfig.RESOLUTION.height.toFloat()).align(Alignment.TopStart)
+                Modifier.fillMaxHeight(0.38f).aspectRatio(StreamConfig.ASPECT_RATIO).align(Alignment.TopStart)
             } else {
                 Modifier.fillMaxSize()
             },
@@ -593,7 +594,7 @@ private fun LiveOverlay(
     } else {
         // Video aspect ratio must match the AndroidView sibling in AppRoot's Box so this row's
         // left-hand spacer lines up exactly with the actual rendered video underneath.
-        val videoAspectRatio = StreamConfig.RESOLUTION.width / StreamConfig.RESOLUTION.height.toFloat()
+        val videoAspectRatio = StreamConfig.ASPECT_RATIO
 
         // Owner-requested reference-match redesign (light background, yellow accent) — scoped to
         // this screen only via LiveScoringView.kt's composables; see that file's header comment.
@@ -1239,9 +1240,10 @@ private fun launchStream(
     ingestUrl: String,
     streamKey: String,
     mode: RecordingMode,
+    quality: VideoQuality,
 ) {
     val file = if (mode != RecordingMode.STREAM_ONLY) RecordingsManager.newRecordingFile(context) else null
-    StreamingService.start(context, ingestUrl, streamKey, mode, file)
+    StreamingService.start(context, ingestUrl, streamKey, mode, file, quality)
 }
 
 private fun statusText(state: StreamerHolder.State): String = when (state) {

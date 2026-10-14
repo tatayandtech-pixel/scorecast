@@ -21,6 +21,7 @@ data class StreamTarget(
     val ingestUrl: String = Platform.FACEBOOK.defaultIngestUrl,
     val streamKey: String = "",
     val mode: RecordingMode = RecordingMode.STREAM_ONLY,
+    val quality: VideoQuality = VideoQuality.HIGH,
 )
 
 /** A previously-used ingest URL, kept for quick re-selection (spec §10). Never stores the key —

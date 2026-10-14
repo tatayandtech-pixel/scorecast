@@ -36,7 +36,8 @@ class StreamingService : Service() {
                 val mode = RecordingMode.entries[modeOrdinal]
                 val filePath = intent.getStringExtra(EXTRA_FILE)
                 val file = filePath?.let { File(it) }
-                scope.launch { StreamerHolder.start(applicationContext, url, key, mode, file) }
+                val quality = VideoQuality.entries[intent.getIntExtra(EXTRA_QUALITY, VideoQuality.HIGH.ordinal)]
+                scope.launch { StreamerHolder.start(applicationContext, url, key, mode, file, quality) }
             }
             ACTION_STOP -> {
                 scope.launch {
@@ -88,6 +89,7 @@ class StreamingService : Service() {
         private const val EXTRA_KEY = "key"
         private const val EXTRA_MODE = "mode"
         private const val EXTRA_FILE = "file"
+        private const val EXTRA_QUALITY = "quality"
 
         fun start(
             context: Context,
@@ -95,6 +97,7 @@ class StreamingService : Service() {
             streamKey: String,
             mode: RecordingMode = RecordingMode.STREAM_ONLY,
             recordingFile: File? = null,
+            quality: VideoQuality = VideoQuality.HIGH,
         ) {
             val intent = Intent(context, StreamingService::class.java).apply {
                 action = ACTION_START
@@ -102,6 +105,7 @@ class StreamingService : Service() {
                 putExtra(EXTRA_KEY, streamKey)
                 putExtra(EXTRA_MODE, mode.ordinal)
                 recordingFile?.let { putExtra(EXTRA_FILE, it.absolutePath) }
+                putExtra(EXTRA_QUALITY, quality.ordinal)
             }
             context.startForegroundService(intent)
         }
