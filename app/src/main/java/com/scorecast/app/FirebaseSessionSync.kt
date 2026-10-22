@@ -304,4 +304,30 @@ object FirebaseSessionSync {
         connectedListener = cl
         connectedRef.addValueEventListener(cl)
     }
+
+    /**
+     * Push an OCR-detected score change as Firebase atomic increments (spec §4).
+     *
+     * This is an alternative entry point for the OCR mirror device to write score deltas directly,
+     * bypassing the GameStateHolder.update → observeLocalChanges → pushDiff path. It exists for
+     * cases where the local state is already up-to-date (e.g., the mirror device just received a
+     * remote echo of a main-device score and wants to push its own OCR-detected delta without
+     * triggering a local diff cycle).
+     *
+     * For the common case, the OCR scanner calls GameStateHolder.update { copy(...) } which
+     * triggers pushDiff() → ServerValue.increment() automatically — the local-first pattern
+     * keeps rendering instant and collision-safe (spec §2).
+     */
+    fun pushOcrScoreUpdate(homeDelta: Int, awayDelta: Int) {
+        val ref = sessionRef
+        if (ref == null || homeDelta == 0 && awayDelta == 0) return
+        val updates = mutableMapOf<String, Any?>(
+            "updatedAt" to ServerValue.TIMESTAMP,
+            "lastUpdatedBy" to "OCR" + role.name,
+        )
+        if (homeDelta != 0) updates["homeScore"] = ServerValue.increment(homeDelta.toLong())
+        if (awayDelta != 0) updates["awayScore"] = ServerValue.increment(awayDelta.toLong())
+        ref.updateChildren(updates)
+        Log.d(TAG, "OCR push: home=+$homeDelta away=+$awayDelta")
+    }
 }

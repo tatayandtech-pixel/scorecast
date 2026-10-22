@@ -13,6 +13,20 @@ object GameStateHolder {
     }
 
     /**
+     * Sets absolute scores detected by OCR from a physical scoreboard (mirror device feature).
+     * The diff to the current state is pushed to Firebase as ServerValue.increment() via the
+     * existing observeLocalChanges → pushDiff path — same as manual scoring, just a different
+     * entry point. Only home/away scores are set here; sets and period detection from OCR
+     * is planned for a future enhancement.
+     */
+    fun setScoreDirect(home: Int, away: Int) = update {
+        copy(
+            homeScore = home.coerceAtLeast(0),
+            awayScore = away.coerceAtLeast(0),
+        )
+    }
+
+    /**
      * Applies a state snapshot received from Firebase (spec §4) without going through the normal
      * mutation helpers — used by [FirebaseSessionSync] when a remote change comes in. Local-first
      * (spec §2): this only ever runs in response to a remote update, never blocks a local edit.

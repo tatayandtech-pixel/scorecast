@@ -114,7 +114,7 @@ class MainActivity : ComponentActivity() {
 /** Navigation skeleton (spec Appendix B/A): portrait setup screens, landscape in-game screen. */
 private enum class Screen {
     HOME, SETTINGS, MATCHES, WIZARD_SPORT, WIZARD_TEAMS, WIZARD_PLATFORM, WIZARD_DESTINATION, IN_GAME,
-    MIRROR_SCAN, MIRROR_SCORING,
+    MIRROR_SCAN, MIRROR_SCORING, OCR_DEBUG,
 }
 
 @Composable
@@ -141,7 +141,7 @@ private fun AppRoot() {
     // saw Back at all and Android finished MainActivity instead. HOME is left to the system (exits),
     // and IN_GAME handles Back itself (StreamScreen/LiveOverlay) since a live match needs a confirm.
     val backTarget: (() -> Unit)? = when (screen) {
-        Screen.SETTINGS, Screen.MIRROR_SCAN, Screen.MATCHES -> { { screen = Screen.HOME } }
+        Screen.SETTINGS, Screen.MIRROR_SCAN, Screen.MATCHES, Screen.OCR_DEBUG -> { { screen = Screen.HOME } }
         Screen.MIRROR_SCORING -> { {
             FirebaseSessionSync.stop()
             mirrorSession = null
@@ -160,6 +160,9 @@ private fun AppRoot() {
             onCreateStream = { screen = Screen.MATCHES },
             onJoinAsRemote = { screen = Screen.MIRROR_SCAN },
             onOpenSettings = { screen = Screen.SETTINGS },
+            // Debug builds get a direct route to the OCR scanner so the camera -> Tesseract
+            // pipeline can be exercised on one device. Release builds get no such entry point.
+            onOpenOcrDebug = if (BuildConfig.DEBUG) ({ screen = Screen.OCR_DEBUG }) else null,
         )
         Screen.SETTINGS -> SettingsScreen(
             onBack = { screen = Screen.HOME },
@@ -188,6 +191,7 @@ private fun AppRoot() {
                 LaunchedEffect(Unit) { screen = Screen.HOME }
             }
         }
+        Screen.OCR_DEBUG -> OcrDebugScreen(onBack = { screen = Screen.HOME })
         Screen.MATCHES -> MatchesScreen(
             onBack = { screen = Screen.HOME },
             onNewMatch = {

@@ -7,6 +7,20 @@
          never appears in this codebase) and are safe to commit. The login protocol scheme that
          used to sit here was only for the SDK's own Custom Tab handler; login now goes through
          the external browser and returns via scorecast://fb-auth, declared in the manifest. -->
-    <string name="facebook_app_id">135202131318789</string>
+    <string name="facebook_app_id">1352021316318789</string>
     <string name="facebook_client_token">879b454e6d652b478d82b7e59f914175</string>
+
+    <!-- OCR scanner (Phase 10: mirror device physical scoreboard capture) -->
+    <string name="ocr_permission_needed">Camera permission is needed for OCR scoring.</string>
+    <string name="ocr_grant_permission">Grant camera permission</string>
+    <string name="ocr_init">Initializing OCR…</string>
+    <string name="ocr_ready">Point camera at physical scoreboard</string>
+    <string name="ocr_failed">OCR engine failed to initialize</string>
+    <string name="ocr_scanning">Scanning</string>
+    <string name="ocr_paused">Paused</string>
+    <string name="ocr_pause">Pause</string>
+    <string name="ocr_resume">Scan</string>
+    <string name="ocr_no_digits">No readable digits — aim at scoreboard</string>
+    <string name="ocr_exit">Exit OCR</string>
+    <string name="ocr_toggle">OCR Scan</string>
 </resources>

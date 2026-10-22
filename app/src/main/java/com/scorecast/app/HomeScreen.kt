@@ -41,6 +41,9 @@ fun HomeScreen(
     onCreateStream: () -> Unit,
     onJoinAsRemote: () -> Unit,
     onOpenSettings: () -> Unit,
+    // Debug builds only — opens the OCR scanner directly, without the two-device pairing flow
+    // that otherwise guards the whole mirror/OCR feature. Null in release builds hides the card.
+    onOpenOcrDebug: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -143,6 +146,14 @@ fun HomeScreen(
             subtitle = "Scan the main device's pairing QR code",
             onClick = onJoinAsRemote,
         )
+        if (onOpenOcrDebug != null) {
+            Spacer(Modifier.height(16.dp))
+            HomeCard(
+                title = "OCR Scan (debug)",
+                subtitle = "Open the camera scanner without pairing a second device",
+                onClick = onOpenOcrDebug,
+            )
+        }
     }
 }
 
