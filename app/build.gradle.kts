@@ -27,6 +27,7 @@ android {
         targetSdk = 34            // Android 14 foreground-service-type rules apply (spec §10).
         versionCode = 2
         versionName = "0.2.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -70,6 +71,8 @@ android {
     }
     buildFeatures {
         compose = true
+        // Needed for BuildConfig.DEBUG, which gates the debug-only OCR entry point on Home.
+        buildConfig = true
     }
 }
 
@@ -78,6 +81,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.service)
+    implementation(libs.androidx.lifecycle.compose)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -103,4 +107,19 @@ dependencies {
 
     // Facebook Login SDK (Phase 8) — Page access tokens for Graph API live video creation.
     implementation(libs.facebook.login)
+
+    // OCR scoring (mirror device): open-source Tesseract for digit recognition
+    // on physical scoreboards. Used by the mirror device to scan venue scoreboards.
+    implementation(libs.tess.two)
+
+    // CameraX for the mirror device's camera preview + frame analysis (OCR scanning).
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+
+    // Instrumented tests — the OCR engine needs a real device (native Tesseract .so + traineddata
+    // download), so it is verified on-device rather than on the JVM.
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }

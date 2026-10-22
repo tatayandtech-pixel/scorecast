@@ -12,6 +12,14 @@ local.properties
 /.firebase/
 /screenshots/
 
+# Local IDE scratch dir. It currently holds a *copy* of the release signing key
+# (AndroidStudio/scorecast-release); the canonical keystore lives outside the repo at the path
+# referenced by keystore.properties. This must never be committed.
+/AndroidStudio/
+
+# Scratch build logs.
+/build_output.log
+
 # JVM crash dumps from an out-of-memory Gradle/Kotlin daemon — regenerable artifacts.
 hs_err_pid*.log
 replay_pid*.log

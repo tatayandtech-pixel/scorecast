@@ -24,6 +24,16 @@ firebaseBom = "33.7.0"
 # Phase 8: raw Facebook Login SDK (not Firebase Auth's Facebook provider) — Page access tokens
 # are needed for Graph API live video creation, which an identity-link login can't provide.
 facebookLogin = "18.0.3"
+# OCR scoring: open-source Tesseract for digit recognition on physical scoreboards.
+# 5.6.0 does not exist on Maven Central (published versions jump 5.4.1 -> 6.0.0); 9.1.0 is the
+# latest and ships the same com.googlecode.tesseract.android.TessBaseAPI class plus `end()`.
+tessTwo = "9.1.0"
+# CameraX for the mirror device's camera preview + frame analysis (OCR scanning).
+camerax = "1.3.4"
+# Instrumented tests: the OCR engine is only exercisable on a real device (it loads the native
+# Tesseract .so and downloads a traineddata model), so it is covered by androidTest, not unit tests.
+androidxTestRunner = "1.6.2"
+androidxTestExtJunit = "1.2.1"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -47,6 +57,19 @@ firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "fir
 firebase-database = { module = "com.google.firebase:firebase-database" }
 firebase-auth = { module = "com.google.firebase:firebase-auth" }
 facebook-login = { module = "com.facebook.android:facebook-login", version.ref = "facebookLogin" }
+# OCR scoring (mirror device): open-source Tesseract for digit recognition on physical scoreboards.
+tess-two = { module = "com.rmtheis:tess-two", version.ref = "tessTwo" }
+# CameraX for the mirror device's camera preview + frame analysis (OCR scanning).
+androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
+# Compose-side lifecycle owner (LocalLifecycleOwner) moved out of androidx.compose.ui.platform in
+# lifecycle-runtime-compose 2.8.x — importing from the old package triggers a deprecation warning.
+androidx-lifecycle-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+# Instrumented test runner.
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExtJunit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
