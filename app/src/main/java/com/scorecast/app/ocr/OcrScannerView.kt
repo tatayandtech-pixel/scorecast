@@ -59,6 +59,7 @@ import com.scorecast.app.SportConfig
 import com.scorecast.app.ocr.OcrScoreMatcher.ScoreDelta
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "OcrScannerView"
 
@@ -282,6 +283,17 @@ fun OcrScannerView(
 }
 
 /**
+ * Marks an OCR pass as running, so at most one pass is ever in flight.
+ *
+ * The camera analyzer delivers a frame every ~33 ms while a single OCR pass takes tens of
+ * milliseconds. Without this guard a new coroutine is launched for every incoming frame and
+ * they all pile up waiting on the engine's recognition lock, which grows an unbounded backlog
+ * and keeps the scanner working on stale frames long after the scoreboard changed. Frames that
+ * arrive while a pass is running are dropped instead: the next one is more representative.
+ */
+private val ocrPassInFlight = AtomicBoolean(false)
+
+/**
  * Analyzes a camera frame with OCR and notifies the callback of score deltas.
  * Runs OCR on a background coroutine — the ImageAnalysis analyzer must close the proxy
  * promptly to avoid blocking the camera pipeline.
@@ -295,40 +307,48 @@ private fun analyzeFrame(
     onStatus: (String) -> Unit,
     scanEnabled: () -> Boolean,
 ) {
-    if (!scanEnabled()) {
+    // Drop the frame if scanning is paused, or if a pass is still running.
+    if (!scanEnabled() || !ocrPassInFlight.compareAndSet(false, true)) {
         proxy.close()
         return
     }
 
     val bitmap = proxy.toGrayscaleBitmap()
     if (bitmap == null) {
+        ocrPassInFlight.set(false)
         proxy.close()
         return
     }
     proxy.close()
 
     coroutineScope.launch {
-        val lines = ocrEngine.recognize(bitmap)
-        val current = OcrCameraController.currentGameState
-        val config = OcrCameraController.currentSportConfig
+        try {
+            val lines = ocrEngine.recognize(bitmap)
+            val current = OcrCameraController.currentGameState
+            val config = OcrCameraController.currentSportConfig
 
-        if (lines.isEmpty() || current == null || config == null) {
-            onStatus("No readable digits — aim at scoreboard")
-            return@launch
-        }
+            if (lines.isEmpty() || current == null || config == null) {
+                onStatus("No readable digits — aim at scoreboard")
+                return@launch
+            }
 
-        val result = OcrCameraController.matcher.match(lines, current, config)
-        if (result == null) {
-            onStatus("Reading…")
-            return@launch
-        }
+            val result = OcrCameraController.matcher.match(lines, current, config)
+            if (result == null) {
+                onStatus("Reading…")
+                return@launch
+            }
 
-        val delta = OcrCameraController.matcher.computeDelta(result, current)
-        if (delta.homeDelta != 0 || delta.awayDelta != 0) {
-            onScoreDelta(delta)
-            onStatus("Detected: HOME ${current.homeScore + delta.homeDelta} / AWAY ${current.awayScore + delta.awayDelta}")
-        } else {
-            onStatus("Score unchanged: ${current.homeScore}–${current.awayScore}")
+            val delta = OcrCameraController.matcher.computeDelta(result, current)
+            if (delta.homeDelta != 0 || delta.awayDelta != 0) {
+                onScoreDelta(delta)
+                onStatus("Detected: HOME ${current.homeScore + delta.homeDelta} / AWAY ${current.awayScore + delta.awayDelta}")
+            } else {
+                onStatus("Score unchanged: ${current.homeScore}–${current.awayScore}")
+            }
+        } finally {
+            // Always release the slot, even if recognition threw, or the scanner would
+            // silently stop analysing frames after the first error.
+            ocrPassInFlight.set(false)
         }
     }
 }

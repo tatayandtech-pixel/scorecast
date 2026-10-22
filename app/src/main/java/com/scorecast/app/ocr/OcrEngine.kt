@@ -6,6 +6,8 @@ import android.graphics.Rect
 import android.util.Log
 import com.googlecode.tesseract.android.TessBaseAPI
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -115,6 +117,21 @@ class OcrEngine(private val context: Context) {
     private var tessBaseApi: TessBaseAPI? = null
     private var initialized = false
 
+    /**
+     * Serializes recognition calls against the single [tessBaseApi] instance.
+     *
+     * Tesseract 3.05's `TessBaseAPI` keeps its recognition state (the current image, the
+     * recognition result, the text buffer) inside the native object and is NOT thread-safe.
+     * Two overlapping `setImage`/`getUTF8Text` sequences corrupt that state and abort the
+     * whole process with SIGABRT inside leptonica's `ReadFile.nativeReadBitmap` — a native
+     * crash that no `try/catch` can recover from, and it takes the app down with it.
+     *
+     * The camera analyzer delivers a new frame every ~33 ms while one full-frame OCR pass
+     * takes tens of milliseconds, so without this lock several passes overlap and the app
+     * crashes reliably as soon as the scanner starts.
+     */
+    private val recognizeMutex = Mutex()
+
     /** Mean confidence (0..1) of the most recent recognition. */
     var lastConfidence: Float = 0f
         private set
@@ -202,38 +219,46 @@ class OcrEngine(private val context: Context) {
 
     fun isReady(): Boolean = initialized && tessBaseApi != null
 
-    /** Recognizes text in the given bitmap and returns detected lines with bounding boxes. */
+    /**
+     * Recognizes text in the given bitmap and returns detected lines with bounding boxes.
+     *
+     * Concurrent calls are serialized by [recognizeMutex]: the underlying Tesseract API is
+     * not thread-safe, and overlapping passes crash the process natively (SIGABRT inside
+     * leptonica). See [recognizeMutex] for the details.
+     */
     suspend fun recognize(bitmap: Bitmap): List<OcrTextLine> = withContext(Dispatchers.IO) {
         val api = tessBaseApi ?: return@withContext emptyList()
-        try {
-            // Scale down for speed — OCR at half resolution is still accurate for large digits.
-            val scaled = if (bitmap.width > MAX_RECOGNIZE_WIDTH) {
-                Bitmap.createScaledBitmap(
-                    bitmap,
-                    MAX_RECOGNIZE_WIDTH,
-                    (MAX_RECOGNIZE_WIDTH.toFloat() / bitmap.width * bitmap.height).toInt(),
-                    true,
-                )
-            } else {
-                bitmap
+        recognizeMutex.withLock {
+            try {
+                // Scale down for speed - OCR at half resolution is still accurate for large digits.
+                val scaled = if (bitmap.width > MAX_RECOGNIZE_WIDTH) {
+                    Bitmap.createScaledBitmap(
+                        bitmap,
+                        MAX_RECOGNIZE_WIDTH,
+                        (MAX_RECOGNIZE_WIDTH.toFloat() / bitmap.width * bitmap.height).toInt(),
+                        true,
+                    )
+                } else {
+                    bitmap
+                }
+
+                api.setImage(scaled)
+                val rawText = api.getUTF8Text()
+                // meanConfidence() is 0..100 in this library; normalize to 0..1 for comparison.
+                val conf = api.meanConfidence() / 100f
+                // The result iterator must be consumed BEFORE api.clear() - clear() wipes the
+                // recognition result the iterator walks over.
+                val lines = parseOcrLines(api, scaled.width, scaled.height, conf)
+                api.clear()
+                lastConfidence = conf
+
+                if (rawText.isBlank() || conf < MIN_MEAN_CONFIDENCE) return@withLock emptyList()
+
+                lines
+            } catch (e: Exception) {
+                Log.w(TAG, "OCR recognition failed", e)
+                emptyList()
             }
-
-            api.setImage(scaled)
-            val rawText = api.getUTF8Text()
-            // meanConfidence() is 0..100 in this library; normalize to 0..1 for comparison.
-            val conf = api.meanConfidence() / 100f
-            // The result iterator must be consumed BEFORE api.clear() — clear() wipes the
-            // recognition result the iterator walks over.
-            val lines = parseOcrLines(api, scaled.width, scaled.height, conf)
-            api.clear()
-            lastConfidence = conf
-
-            if (rawText.isBlank() || conf < MIN_MEAN_CONFIDENCE) return@withContext emptyList()
-
-            lines
-        } catch (e: Exception) {
-            Log.w(TAG, "OCR recognition failed", e)
-            emptyList()
         }
     }
 
