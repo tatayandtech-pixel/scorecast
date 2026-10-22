@@ -108,7 +108,10 @@ private fun FacebookAccountRow() {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = { FacebookAuthManager.logout(context) }) { Text("Sign out") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { FacebookAuthManager.logout(context) }) { Text("Sign out") }
+                OutlinedButton(onClick = { FacebookAuthManager.switchAccount(context) }) { Text("Switch account") }
+            }
         }
         is FacebookAuthManager.State.LoggingIn -> {
             CircularProgressIndicator(modifier = Modifier.height(24.dp))

@@ -93,6 +93,24 @@ fun FacebookDestinationScreen(
             }
 
             is FacebookAuthManager.State.LoggedIn -> {
+                val userName = (authState as FacebookAuthManager.State.LoggedIn).session.userName
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (userName.isNotBlank()) "Signed in as $userName" else "Signed in with Facebook",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = {
+                        // The live video already made belongs to this account's Page; drop it so
+                        // the next account has to pick its own.
+                        pages = emptyList()
+                        selectedPage = null
+                        onTargetChange(target.copy(ingestUrl = Platform.FACEBOOK.defaultIngestUrl, streamKey = ""))
+                        FacebookAuthManager.switchAccount(context)
+                    }) { Text("Switch account") }
+                }
+                Spacer(Modifier.height(6.dp))
                 if (loadingPages) {
                     CircularProgressIndicator()
                 } else {

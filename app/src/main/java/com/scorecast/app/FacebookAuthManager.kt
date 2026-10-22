@@ -97,8 +97,20 @@ object FacebookAuthManager {
         }
     }
 
+    /**
+     * Signs the current account out of ScoreCast and opens Facebook's login asking for an account
+     * again (owner request: someone else can stream to their own Page from this phone). Without
+     * `auth_type=reauthenticate` the browser, still signed in to facebook.com, would just offer
+     * "Continue as <previous person>"; this way the page asks again and offers its own
+     * "log into another account".
+     */
+    fun switchAccount(context: Context) {
+        logout(context)
+        login(context, reauthenticate = true)
+    }
+
     /** Opens the login page in the user's browser, as a separate task. */
-    fun login(context: Context) {
+    fun login(context: Context, reauthenticate: Boolean = false) {
         val nonce = newNonce()
         FacebookSessionStore.savePendingState(context, nonce)
 
@@ -109,6 +121,7 @@ object FacebookAuthManager {
             .appendQueryParameter("response_type", "token")
             .appendQueryParameter("scope", PERMISSIONS.joinToString(","))
             .appendQueryParameter("state", nonce)
+            .apply { if (reauthenticate) appendQueryParameter("auth_type", "reauthenticate") }
             .build()
 
         val intent = Intent(Intent.ACTION_VIEW, authUrl).apply {
