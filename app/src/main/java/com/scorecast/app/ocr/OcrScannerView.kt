@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.scorecast.app.BuildConfig
 import com.scorecast.app.GameState
 import com.scorecast.app.SportConfig
 import com.scorecast.app.ocr.OcrScoreMatcher.ScoreDelta
@@ -195,6 +196,7 @@ fun OcrScannerView(
                             it.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { proxy ->
                                 analyzeFrame(
                                     proxy = proxy,
+                                    context = ctx,
                                     ocrEngine = ocrEngine,
                                     coroutineScope = coroutineScope,
                                     onScoreDelta = { delta ->
@@ -301,6 +303,7 @@ private val ocrPassInFlight = AtomicBoolean(false)
 @androidx.camera.core.ExperimentalGetImage
 private fun analyzeFrame(
     proxy: ImageProxy,
+    context: Context,
     ocrEngine: OcrEngine,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     onScoreDelta: (ScoreDelta) -> Unit,
@@ -313,13 +316,19 @@ private fun analyzeFrame(
         return
     }
 
-    val bitmap = proxy.toGrayscaleBitmap()
+    val bitmap = proxy.toOcrBitmap(context)
     if (bitmap == null) {
         ocrPassInFlight.set(false)
         proxy.close()
         return
     }
     proxy.close()
+
+    // Debug aid: dump the exact bitmap the engine is about to read, so the preprocessing can
+    // be checked against a real capture. Rate-limited to one frame every few seconds.
+    if (BuildConfig.DEBUG) {
+        OcrFramePreprocessor.dumpBitmap(context, bitmap, "ocr_input")
+    }
 
     coroutineScope.launch {
         try {
@@ -354,29 +363,35 @@ private fun analyzeFrame(
 }
 
 /**
- * Converts a YUV_420_888 ImageProxy to a grayscale ARGB Bitmap for Tesseract OCR.
- * Uses only the Y (luminance) plane — for digit recognition on LED scoreboards,
- * grayscale is sufficient and avoids the YUV-to-NV21 interleaving complexity.
+ * Converts a camera frame into the bitmap Tesseract should read.
  *
- * Renamed away from `toBitmap()` because androidx.camera.core.ImageProxy now exposes a
- * member function `toBitmap()` that shadows this extension (compile warning at call site).
+ * Three steps, in this order:
+ *
+ * 1. **YUV -> RGB.** The old implementation used the Y (luminance) plane only, which is what
+ *    made the LED digits unreadable: BT.601 luminance of pure red is only 30% grey, so the red
+ *    "70" and "64" on this board were dim grey smudges on a black background.
+ * 2. **Crop to the scoreboard.** The board is a big dark rectangle; the ceiling and walls
+ *    behind it are bright and would otherwise dominate the recognition. When no board can be
+ *    found the full frame is used.
+ * 3. **Binarise on colour.** Only the *illuminated* LEDs survive, so the printed captions
+ *    ("HOME", "VISITOR", ...) are dropped and the digits stand out in white on black.
  */
 @androidx.camera.core.ExperimentalGetImage
-private fun ImageProxy.toGrayscaleBitmap(): Bitmap? {
-    val image = this.image ?: return null
-    val yBuffer = image.planes[0].buffer // Y (luminance)
-    if (yBuffer.remaining() < image.width * image.height) return null
+private fun ImageProxy.toOcrBitmap(context: Context): Bitmap? {
+    val rgb = with(OcrFramePreprocessor) { toRgbBitmap() } ?: return null
 
-    val y = ByteArray(image.width * image.height)
-    yBuffer.get(y)
-
-    return Bitmap.createBitmap(image.width, image.height, Bitmap.Config.ARGB_8888).also { bmp ->
-        val pixels = IntArray(image.width * image.height)
-        for (i in pixels.indices) {
-            val v = y[i].toInt() and 0xFF
-            // Grayscale: R=G=B=v, A=255
-            pixels[i] = (0xFF shl 24) or (v shl 16) or (v shl 8) or v
-        }
-        bmp.setPixels(pixels, 0, image.width, 0, 0, image.width, image.height)
+    val boardRect = with(OcrFramePreprocessor) { rgb.findScoreboardRect() }
+    val cropped = if (boardRect != null) {
+        with(OcrFramePreprocessor) { rgb.cropTo(boardRect) }
+    } else {
+        rgb
     }
+
+    if (BuildConfig.DEBUG) {
+        OcrFramePreprocessor.dumpBitmap(context, rgb, "ocr_rgb")
+        OcrFramePreprocessor.dumpBitmap(context, cropped, "ocr_crop")
+    }
+
+    return with(OcrFramePreprocessor) { cropped.toOcrBinaryBitmap().upscaleForOcr() }
 }
+

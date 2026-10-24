@@ -111,7 +111,7 @@ class OcrEngine(private val context: Context) {
          * irrelevant next to the 2 s debounce the scanner applies to score updates, and the
          * camera's KEEP_ONLY_LATEST strategy drops frames while OCR runs anyway.
          */
-        private const val MAX_RECOGNIZE_WIDTH = 1280
+        private const val MAX_RECOGNIZE_WIDTH = 1600
     }
 
     private var tessBaseApi: TessBaseAPI? = null
@@ -205,7 +205,18 @@ class OcrEngine(private val context: Context) {
             // thrown away: Tesseract then recognised letters, so "KICKOFF" was read as
             // "KICKOFF" and the clock colon was read inconsistently.
             api.setVariable(TessBaseAPI.VAR_CHAR_WHITELIST, "0123456789: ")
-            api.setPageSegMode(TessBaseAPI.PageSegMode.PSM_AUTO)
+
+            // PSM_SINGLE_BLOCK, not PSM_AUTO.
+            //
+            // PSM_AUTO lets Tesseract decide that the image contains several separate blocks
+            // and treats them as separate pages, which loses the layout. On a scoreboard the
+            // digits sit in a sparse grid with lots of empty space between them, and PSM_AUTO
+            // regularly returned only one of the two scores.
+            //
+            // PSM_SINGLE_BLOCK reads the whole image as one block of text and finds every
+            // word in it, which is what the matcher needs: it decides home vs. away from each
+            // word's own bounding box.
+            api.setPageSegMode(TessBaseAPI.PageSegMode.PSM_SINGLE_BLOCK)
 
             tessBaseApi = api
             initialized = true

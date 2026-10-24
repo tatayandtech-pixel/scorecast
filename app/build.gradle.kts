@@ -74,6 +74,12 @@ android {
         // Needed for BuildConfig.DEBUG, which gates the debug-only OCR entry point on Home.
         buildConfig = true
     }
+
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -122,4 +128,8 @@ dependencies {
     // download), so it is verified on-device rather than on the JVM.
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
+
+    // JVM unit tests: the score-matching logic is plain Kotlin and can be tested without a
+    // device. The Tesseract engine itself needs the native .so, so it stays in androidTest.
+    testImplementation(libs.junit)
 }
